@@ -1,3 +1,5 @@
+mod commands;
+
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
@@ -11,9 +13,6 @@ fn repl() {
         io::stdout().flush().unwrap();
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
-        if input.trim() == "exit" {
-            break;
-        }
-        println!("{}: command not found", input.trim());
+        commands::process_command(input.trim());
     }
 }
