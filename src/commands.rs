@@ -1,6 +1,7 @@
 use std::fs;
 use std::process::exit;
 use std::os::unix::fs::PermissionsExt;
+use std::process;
 
 pub fn process_command(input: &str) {
     let parts: Vec<&str> = input.split_whitespace().collect();
@@ -9,16 +10,16 @@ pub fn process_command(input: &str) {
     match cmd {
         "exit" => exit(0),
         "echo" => println!("{}", args),
-        "type" => process_type(&args),
+        "type" => process_type(cmd, &args),
         _ => println!("{}: command not found", cmd),
     }
 }
 
-fn process_type(cmd: &str) {
+fn process_type(cmd: &str, args: &str) {
     match cmd {
         "exit" | "echo" | "type" => println!("{} is a shell builtin", cmd),
         _ => match find_command(cmd) {
-            Some(path ) => println!("{} is {}", cmd, path),
+            Some(path ) => run_command(cmd, args),
             None => println!("{}: not found", cmd)
         }
     }
@@ -34,4 +35,20 @@ fn find_command(cmd: &str) -> Option<String> {
         })
         .find(|e| e.path().file_name().map_or(false, |n| n == cmd))
         .map(|e| e.path().display().to_string())
+}
+
+fn run_command(cmd: &str, args: &str) {
+    let output = process::Command::new(cmd).args(args.split_whitespace()).output();
+    match output {
+        Ok(output) => {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("{}", stderr);
+                return;
+            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            println!("{}", stdout);
+        },
+        Err(e) => println!("Failed to execute command: {} \n {}", cmd, e)
+    }
 }
