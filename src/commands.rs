@@ -19,7 +19,7 @@ fn process_type(cmd: &str, args: &str) {
     match cmd {
         "exit" | "echo" | "type" => println!("{} is a shell builtin", cmd),
         _ => match find_command(cmd) {
-            Some(path ) => run_command(cmd, args),
+            Some(path ) => run_command(&path, args),
             None => println!("{}: not found", cmd)
         }
     }
