@@ -52,6 +52,6 @@ fn run_command(cmd: PathBuf, args: &str) {
             let stdout = String::from_utf8_lossy(&output.stdout);
             print!("{}", stdout);
         },
-        Err(e) => print!("Failed to execute command")
+        Err(_) => print!("Failed to execute command")
     }
 }
