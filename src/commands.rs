@@ -1,7 +1,7 @@
 use std::fs;
 use std::process::exit;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::process;
 use std::os::unix::process::CommandExt;
 
@@ -13,16 +13,15 @@ pub fn process_command(input: &str) {
         "exit" => exit(0),
         "echo" => println!("{}", args),
         "type" => process_type(&args),
-        _ => find_command(cmd).map(|path| run_command(path, &args)).unwrap_or_else(|| println!("{}: not found", cmd))
+        _ => find_command(&cmd).map(|path| run_command(path, &args)).unwrap_or_else(|| println!("{}: not found", cmd))
     }
 }
 
-fn process_type(args: &str) {
-    let cmd = args.split_whitespace().next().unwrap_or("");
+fn process_type(cmd: &str) {
     match cmd {
-        "exit" | "echo" | "type" => println!("{} is a shell builtin", args.trim()),
+        "exit" | "echo" | "type" => println!("{} is a shell builtin", cmd),
         _ => match find_command(cmd) {
-            Some(path ) => run_command(path, args),
+            Some(path ) => println!("{} is {}", cmd, path.display().to_string()),
             None => println!("{}: not found", cmd)
         }
     }
