@@ -25,33 +25,13 @@ fn process_type(cmd: &str) {
 }
 
 fn find_command(cmd: &str) -> Option<String> {
-    if let Some(path) = std::env::var_os("PATH") {
-        let env_paths = std::env::split_paths(&path);
-        for path in env_paths {
-            let entries = fs::read_dir(path);
-            match entries {
-                Ok(entries) => {
-                    for e in entries {
-                        match e {
-                            Ok(entry) => {
-                                if let Ok(metadata) = entry.metadata() {
-                                    if metadata.permissions().mode() & 0o111 != 0 {
-                                        if let Some(file_name) = entry.path().file_name() {
-                                            if file_name == cmd {
-                                                let full_path = entry.path().display().to_string();
-                                                return Some(full_path);
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            Err(_) => continue,
-                        }
-                    }
-                }
-                Err(_) => continue
-            }
-        }
-    }
-    None
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .flat_map(|dir| fs::read_dir(dir).ok().into_iter().flatten())
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+        })
+        .find(|e| e.path().file_name().map_or(false, |n| n == cmd))
+        .map(|e| e.path().display().to_string())
 }
