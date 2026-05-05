@@ -1,5 +1,6 @@
 use std::fs;
 use std::process::exit;
+use std::os::unix::fs::PermissionsExt;
 
 pub fn process_command(input: &str) {
     let parts: Vec<&str> = input.split_whitespace().collect();
@@ -32,10 +33,16 @@ fn find_command(cmd: &str) -> Option<String> {
                 Ok(entries) => {
                     for e in entries {
                         match e {
-                            Ok(entry) => if let Some(file_name) = entry.path().file_name() {
-                                if file_name == cmd {
-                                    let full_path = entry.path().display().to_string();
-                                    return Some(full_path);
+                            Ok(entry) => {
+                                if let Ok(metadata) = entry.metadata() {
+                                    if metadata.permissions().mode() & 0o111 != 0 {
+                                        if let Some(file_name) = entry.path().file_name() {
+                                            if file_name == cmd {
+                                                let full_path = entry.path().display().to_string();
+                                                return Some(full_path);
+                                            }
+                                        }
+                                    }
                                 }
                             },
                             Err(_) => continue,
