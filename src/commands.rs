@@ -12,7 +12,7 @@ pub fn process_command(input: &str) {
         "exit" => exit(0),
         "echo" => println!("{}", args),
         "type" => process_type(cmd, &args),
-        _ => find_command(cmd).map(|path| run_command(&path, &args)).unwrap_or_else(|| println!("{}: not found", cmd))
+        _ => find_command(cmd).map(|path| run_command(path, &args)).unwrap_or_else(|| println!("{}: not found", cmd))
     }
 }
 
