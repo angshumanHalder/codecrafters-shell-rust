@@ -12,15 +12,16 @@ pub fn process_command(input: &str) {
     match cmd {
         "exit" => exit(0),
         "echo" => println!("{}", args),
-        "type" => process_type(cmd, &args),
+        "type" => process_type(&args),
         _ => find_command(cmd).map(|path| run_command(path, &args)).unwrap_or_else(|| println!("{}: not found", cmd))
     }
 }
 
-fn process_type(cmd: &str, args: &str) {
+fn process_type(args: &str) {
+    let cmd = args.split_whitespace().next().unwrap_or("");
     match cmd {
         "exit" | "echo" | "type" => println!("{} is a shell builtin", args.trim()),
-        _ => match find_command(args.split_whitespace().next().unwrap_or("")) {
+        _ => match find_command(cmd) {
             Some(path ) => run_command(path, args),
             None => println!("{}: not found", cmd)
         }
