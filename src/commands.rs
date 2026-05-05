@@ -1,8 +1,9 @@
 use std::fs;
 use std::process::exit;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::process;
+use std::os::unix::process::CommandExt;
 
 pub fn process_command(input: &str) {
     let parts: Vec<&str> = input.split_whitespace().collect();
@@ -39,7 +40,8 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
 }
 
 fn run_command(cmd: PathBuf, args: &str) {
-    let output = process::Command::new(cmd).args(args.split_whitespace()).output();
+    let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let output = process::Command::new(&cmd).arg0(cmd_name).args(args.split_whitespace()).output();
     match output {
         Ok(output) => {
             if !output.status.success() {
