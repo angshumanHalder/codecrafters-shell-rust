@@ -1,6 +1,7 @@
 use std::fs;
 use std::process::exit;
 use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process;
 
 pub fn process_command(input: &str) {
@@ -11,7 +12,7 @@ pub fn process_command(input: &str) {
         "exit" => exit(0),
         "echo" => println!("{}", args),
         "type" => process_type(cmd, &args),
-        _ => println!("{}: command not found", cmd),
+        _ => find_command(cmd).map(|path| run_command(&path, &args)).unwrap_or_else(|| println!("{}: not found", cmd))
     }
 }
 
@@ -19,13 +20,13 @@ fn process_type(cmd: &str, args: &str) {
     match cmd {
         "exit" | "echo" | "type" => println!("{} is a shell builtin", cmd),
         _ => match find_command(cmd) {
-            Some(path ) => run_command(&path, args),
+            Some(path ) => run_command(path, args),
             None => println!("{}: not found", cmd)
         }
     }
 }
 
-fn find_command(cmd: &str) -> Option<String> {
+fn find_command(cmd: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
         .flat_map(|dir| fs::read_dir(dir).ok().into_iter().flatten())
@@ -34,21 +35,21 @@ fn find_command(cmd: &str) -> Option<String> {
             e.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false)
         })
         .find(|e| e.path().file_name().map_or(false, |n| n == cmd))
-        .map(|e| e.path().display().to_string())
+        .map(|e| e.path())
 }
 
-fn run_command(cmd: &str, args: &str) {
+fn run_command(cmd: PathBuf, args: &str) {
     let output = process::Command::new(cmd).args(args.split_whitespace()).output();
     match output {
         Ok(output) => {
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                println!("{}", stderr);
+                print!("{}", stderr);
                 return;
             }
             let stdout = String::from_utf8_lossy(&output.stdout);
-            println!("{}", stdout);
+            print!("{}", stdout);
         },
-        Err(e) => println!("Failed to execute command: {} \n {}", cmd, e)
+        Err(e) => print!("Failed to execute command")
     }
 }
