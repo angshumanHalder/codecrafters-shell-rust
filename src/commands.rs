@@ -97,11 +97,11 @@ fn run_builtin_command(cmd: &str, args: String) {
                 .into_iter()
                 .next()
                 .unwrap_or_default();
-            // if path == "" || path == "~" {
-            //     if let Err(_) = env::set_current_dir(env::home_dir().unwrap()) {
-            //         println!("cd: {}: No such file or directory", path);
-            //     }
-            // }
+            if path == "" {
+                if let Err(_) = env::set_current_dir(env::home_dir().unwrap()) {
+                    println!("cd: {}: No such file or directory", path);
+                }
+            }
 
             // if path.starts_with("/") {
             //     if let Err(_) = env::set_current_dir(path) {
