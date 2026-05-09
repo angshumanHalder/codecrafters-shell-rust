@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -12,6 +13,10 @@ pub fn process_command(input: &str) {
     match cmd {
         "exit" => exit(0),
         "echo" => println!("{}", args),
+        "pwd" => match env::current_dir() {
+            Ok(dir) => println!("{}", dir.display()),
+            Err(_) => println!("{}: not found", cmd),
+        },
         "type" => process_type(&args),
         _ => find_command(&cmd)
             .map(|path| run_command(path, &args))
@@ -30,9 +35,8 @@ fn process_type(cmd: &str) {
 }
 
 fn find_command(cmd: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    println!("find_command: {}", path.display());
-    std::env::split_paths(&path)
+    let full_path = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&full_path)
         .flat_map(|dir| fs::read_dir(dir).ok().into_iter().flatten())
         .filter_map(|e| e.ok())
         .filter(|e| {
