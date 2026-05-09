@@ -100,6 +100,7 @@ fn run_builtin_command(cmd: &str, args: String) {
             if path == "" {
                 if let Err(_) = env::set_current_dir(env::home_dir().unwrap()) {
                     println!("cd: {}: No such file or directory", path);
+                    return;
                 }
             }
 
