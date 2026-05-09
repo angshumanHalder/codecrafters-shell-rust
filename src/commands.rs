@@ -45,6 +45,7 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
 
 fn run_command(cmd: PathBuf, args: &str) {
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    println!("{}", cmd_name);
     let output = process::Command::new(&cmd)
         .arg0(cmd_name)
         .args(args.split_whitespace())
