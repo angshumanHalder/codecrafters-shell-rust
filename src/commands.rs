@@ -21,7 +21,7 @@ pub fn process_command(input: &str) {
 
 fn process_type(cmd: &str) {
     match cmd {
-        "exit" | "echo" | "type" => println!("{} is a shell builtin", cmd),
+        "exit" | "echo" | "type" | "pwd" => println!("{} is a shell builtin", cmd),
         _ => match find_command(cmd) {
             Some(path) => println!("{} is {}", cmd, path.display().to_string()),
             None => println!("{}: not found", cmd),
