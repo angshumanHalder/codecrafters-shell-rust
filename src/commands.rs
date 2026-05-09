@@ -2,7 +2,6 @@ use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
-use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use std::process::exit;
@@ -92,28 +91,13 @@ fn run_builtin_command(cmd: &str, args: String) {
             Err(_) => println!("{}: not found", cmd),
         },
         "cd" => {
-            let path = args
-                .split_whitespace()
-                .into_iter()
-                .next()
-                .unwrap_or_default();
-            if path == "" || path == "~" {
-                if let Err(_) = env::set_current_dir(env::home_dir().unwrap()) {
+            let path = args.split_whitespace().next().unwrap_or_default();
+            if path.is_empty() || path == "~" {
+                if let Err(_) = env::set_current_dir(env::var("HOME").unwrap()) {
                     println!("cd: {}: No such file or directory", path);
                 }
-            }
-
-            if path.starts_with("/") {
-                if let Err(_) = env::set_current_dir(path) {
-                    println!("cd: {}: No such file or directory", path);
-                }
-            }
-
-            if path.starts_with("./") || path.starts_with("../") {
-                let normalized_path = Path::new(path).canonicalize().unwrap();
-                if let Err(_) = env::set_current_dir(normalized_path) {
-                    println!("cd: {}: No such file or directory", path);
-                }
+            } else if let Err(_) = env::set_current_dir(path) {
+                println!("cd: {}: No such file or directory", path);
             }
         }
         "type" => run_type(&args),
