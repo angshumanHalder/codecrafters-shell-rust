@@ -30,7 +30,7 @@ fn process_type(cmd: &str) {
 }
 
 fn find_command(cmd: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = std::env::var_os("PATH").unwrap_or_default();
     print!("find_command: {}", path.display());
     std::env::split_paths(&path)
         .flat_map(|dir| fs::read_dir(dir).ok().into_iter().flatten())
