@@ -1,9 +1,9 @@
 use std::fs;
-use std::process::exit;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process;
-use std::os::unix::process::CommandExt;
+use std::process::exit;
 
 pub fn process_command(input: &str) {
     let parts: Vec<&str> = input.split_whitespace().collect();
@@ -13,7 +13,9 @@ pub fn process_command(input: &str) {
         "exit" => exit(0),
         "echo" => println!("{}", args),
         "type" => process_type(&args),
-        _ => find_command(&cmd).map(|path| run_command(path, &args)).unwrap_or_else(|| println!("{}: not found", cmd))
+        _ => find_command(&cmd)
+            .map(|path| run_command(path, &args))
+            .unwrap_or_else(|| println!("{}: not found", cmd)),
     }
 }
 
@@ -21,9 +23,9 @@ fn process_type(cmd: &str) {
     match cmd {
         "exit" | "echo" | "type" => println!("{} is a shell builtin", cmd),
         _ => match find_command(cmd) {
-            Some(path ) => println!("{} is {}", cmd, path.display().to_string()),
-            None => println!("{}: not found", cmd)
-        }
+            Some(path) => println!("{} is {}", cmd, path.display().to_string()),
+            None => println!("{}: not found", cmd),
+        },
     }
 }
 
@@ -33,7 +35,9 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
         .flat_map(|dir| fs::read_dir(dir).ok().into_iter().flatten())
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+            e.metadata()
+                .map(|m| m.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
         })
         .find(|e| e.path().file_name().map_or(false, |n| n == cmd))
         .map(|e| e.path())
@@ -41,7 +45,10 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
 
 fn run_command(cmd: PathBuf, args: &str) {
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let output = process::Command::new(&cmd).arg0(cmd_name).args(args.split_whitespace()).output();
+    let output = process::Command::new(&cmd)
+        .arg0(cmd_name)
+        .args(args.split_whitespace())
+        .output();
     match output {
         Ok(output) => {
             if !output.status.success() {
@@ -51,7 +58,7 @@ fn run_command(cmd: PathBuf, args: &str) {
             }
             let stdout = String::from_utf8_lossy(&output.stdout);
             print!("{}", stdout);
-        },
-        Err(_) => print!("Failed to execute command")
+        }
+        Err(_) => print!("Failed to execute command"),
     }
 }
