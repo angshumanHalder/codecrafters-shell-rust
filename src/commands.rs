@@ -2,35 +2,50 @@ use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use std::process::exit;
+
+const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd"];
+
+enum CommandKind {
+    Builtin,
+    External(PathBuf),
+    NotFound,
+}
 
 pub fn process_command(input: &str) {
     let parts: Vec<&str> = input.split_whitespace().collect();
     let cmd = parts.get(0).copied().unwrap_or("");
     let args: String = parts.get(1..).map(|s| s.join(" ")).unwrap_or_default();
-    match cmd {
-        "exit" => exit(0),
-        "echo" => println!("{}", args),
-        "pwd" => match env::current_dir() {
-            Ok(dir) => println!("{}", dir.display()),
-            Err(_) => println!("{}: not found", cmd),
-        },
-        "type" => process_type(&args),
-        _ => find_command(&cmd)
-            .map(|path| run_command(path, &args))
-            .unwrap_or_else(|| println!("{}: not found", cmd)),
+    match resolve_command(cmd) {
+        CommandKind::Builtin => run_builtin_command(cmd, args),
+        CommandKind::External(path) => run_command(path, &args),
+        CommandKind::NotFound => println!("{}: not found", cmd),
     }
 }
 
-fn process_type(cmd: &str) {
-    match cmd {
-        "exit" | "echo" | "type" | "pwd" => println!("{} is a shell builtin", cmd),
-        _ => match find_command(cmd) {
-            Some(path) => println!("{} is {}", cmd, path.display().to_string()),
-            None => println!("{}: not found", cmd),
-        },
+fn resolve_command(cmd: &str) -> CommandKind {
+    if is_builtin(cmd) {
+        CommandKind::Builtin
+    } else {
+        match find_command(cmd) {
+            Some(path) => CommandKind::External(path),
+            None => CommandKind::NotFound,
+        }
+    }
+}
+
+fn is_builtin(cmd: &str) -> bool {
+    BUILTINS.contains(&cmd)
+}
+
+fn run_type(cmd: &str) {
+    match resolve_command(cmd) {
+        CommandKind::Builtin => println!("{} is a shell builtin", cmd),
+        CommandKind::External(path) => println!("{} is {}", cmd, path.display()),
+        CommandKind::NotFound => println!("{}: not found", cmd),
     }
 }
 
@@ -65,5 +80,43 @@ fn run_command(cmd: PathBuf, args: &str) {
             print!("{}", stdout);
         }
         Err(_) => print!("Failed to execute command"),
+    }
+}
+
+fn run_builtin_command(cmd: &str, args: String) {
+    match cmd {
+        "exit" => exit(0),
+        "echo" => println!("{}", args),
+        "pwd" => match env::current_dir() {
+            Ok(dir) => println!("{}", dir.display()),
+            Err(_) => println!("{}: not found", cmd),
+        },
+        "cd" => {
+            let path = args
+                .split_whitespace()
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            if path == "" || path == "~" {
+                if let Err(_) = env::set_current_dir(env::home_dir().unwrap()) {
+                    println!("cd: {}: No such file or directory", path);
+                }
+            }
+
+            if path.starts_with("/") {
+                if let Err(_) = env::set_current_dir(path) {
+                    println!("cd: {}: No such file or directory", path);
+                }
+            }
+
+            if path.starts_with("./") || path.starts_with("../") {
+                let normalized_path = Path::new(path).canonicalize().unwrap();
+                if let Err(_) = env::set_current_dir(normalized_path) {
+                    println!("cd: {}: No such file or directory", path);
+                }
+            }
+        }
+        "type" => run_type(&args),
+        _ => println!("{}: not found", cmd),
     }
 }
