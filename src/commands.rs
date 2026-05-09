@@ -97,25 +97,24 @@ fn run_builtin_command(cmd: &str, args: String) {
                 .into_iter()
                 .next()
                 .unwrap_or_default();
-            if path == "" {
+            if path == "" || path == "~" {
                 if let Err(_) = env::set_current_dir(env::home_dir().unwrap()) {
                     println!("cd: {}: No such file or directory", path);
-                    return;
                 }
             }
 
-            // if path.starts_with("/") {
-            //     if let Err(_) = env::set_current_dir(path) {
-            //         println!("cd: {}: No such file or directory", path);
-            //     }
-            // }
-
-            // if path.starts_with("./") || path.starts_with("../") {
-            let normalized_path = Path::new(path).canonicalize().unwrap();
-            if let Err(_) = env::set_current_dir(normalized_path) {
-                println!("cd: {}: No such file or directory", path);
+            if path.starts_with("/") {
+                if let Err(_) = env::set_current_dir(path) {
+                    println!("cd: {}: No such file or directory", path);
+                }
             }
-            // }
+
+            if path.starts_with("./") || path.starts_with("../") {
+                let normalized_path = Path::new(path).canonicalize().unwrap();
+                if let Err(_) = env::set_current_dir(normalized_path) {
+                    println!("cd: {}: No such file or directory", path);
+                }
+            }
         }
         "type" => run_type(&args),
         _ => println!("{}: not found", cmd),
