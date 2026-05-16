@@ -152,6 +152,12 @@ fn run_builtin_command(cmd: &String, args: String) {
                 println!("cd: {}: No such file or directory", path);
             }
         }
+        "cat" => {
+            if let Some(path) = find_command("cat") {
+                run_command(path, &args);
+                println!()
+            }
+        }
         "type" => run_type(&args),
         _ => println!("{}: not found", cmd),
     }
