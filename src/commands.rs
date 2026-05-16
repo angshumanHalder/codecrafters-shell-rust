@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process;
 use std::process::exit;
 
-const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd"];
+const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "cat"];
 
 enum CommandKind {
     Builtin,
@@ -14,14 +14,66 @@ enum CommandKind {
     NotFound,
 }
 
+#[derive(Debug, PartialEq)]
+enum State {
+    Default,
+    InSingleQuote,
+}
+
+#[derive(Debug, PartialEq)]
+enum ParseError {
+    UnclosedSingleQuote,
+}
+
 pub fn process_command(input: &str) {
-    let parts: Vec<&str> = input.split_whitespace().collect();
-    let cmd = parts.get(0).copied().unwrap_or("");
-    let args: String = parts.get(1..).map(|s| s.join(" ")).unwrap_or_default();
-    match resolve_command(cmd) {
+    let result = process_input(input);
+    match result {
+        Ok(full_cmd) => handle_command(full_cmd),
+        Err(ParseError::UnclosedSingleQuote) => {
+            println!("syntax error: unclosed single quote")
+        }
+    }
+}
+
+fn handle_command(input: Vec<String>) {
+    let cmd = &input[0];
+    let args: String = input.get(1..).map(|s| s.join(" ")).unwrap_or_default();
+    match resolve_command(&cmd) {
         CommandKind::Builtin => run_builtin_command(cmd, args),
         CommandKind::External(path) => run_command(path, &args),
         CommandKind::NotFound => println!("{}: not found", cmd),
+    }
+}
+
+fn process_input(input: &str) -> Result<Vec<String>, ParseError> {
+    let mut args = Vec::new();
+    let mut curr_token = String::new();
+    let mut state = State::Default;
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match state {
+            State::Default => match c {
+                ' ' => {
+                    if !curr_token.is_empty() {
+                        args.push(std::mem::take(&mut curr_token));
+                    }
+                }
+                '\'' => state = State::InSingleQuote,
+                _ => curr_token.push(c),
+            },
+            State::InSingleQuote => match c {
+                '\'' => state = State::Default,
+                _ => curr_token.push(c),
+            },
+        }
+    }
+    if !curr_token.is_empty() {
+        args.push(curr_token);
+    }
+    match state {
+        State::InSingleQuote => Err(ParseError::UnclosedSingleQuote),
+        State::Default => Ok(args),
     }
 }
 
@@ -82,8 +134,8 @@ fn run_command(cmd: PathBuf, args: &str) {
     }
 }
 
-fn run_builtin_command(cmd: &str, args: String) {
-    match cmd {
+fn run_builtin_command(cmd: &String, args: String) {
+    match cmd.as_str() {
         "exit" => exit(0),
         "echo" => println!("{}", args),
         "pwd" => match env::current_dir() {
