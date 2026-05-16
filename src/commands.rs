@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process;
 use std::process::exit;
 
-const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "cat"];
+const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd"];
 
 enum CommandKind {
     Builtin,
@@ -150,11 +150,6 @@ fn run_builtin_command(cmd: &String, args: &[String]) {
                 }
             } else if let Err(_) = env::set_current_dir(path) {
                 println!("cd: {}: No such file or directory", path);
-            }
-        }
-        "cat" => {
-            if let Some(path) = find_command("cat") {
-                run_command(path, args);
             }
         }
         "type" => run_type(args.first().map(|s| s.as_str()).unwrap_or("")),
