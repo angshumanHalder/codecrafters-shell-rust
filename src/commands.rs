@@ -37,9 +37,9 @@ pub fn process_command(input: &str) {
 
 fn handle_command(input: Vec<String>) {
     let cmd = &input[0];
-    let args: String = input.get(1..).map(|s| s.join(" ")).unwrap_or_default();
+    let args: Vec<String> = input.get(1..).unwrap_or_default().to_vec();
     match resolve_command(&cmd) {
-        CommandKind::Builtin => run_builtin_command(cmd, args),
+        CommandKind::Builtin => run_builtin_command(cmd, &args),
         CommandKind::External(path) => run_command(path, &args),
         CommandKind::NotFound => println!("{}: not found", cmd),
     }
@@ -114,11 +114,11 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
         .map(|e| e.path())
 }
 
-fn run_command(cmd: PathBuf, args: &str) {
+fn run_command(cmd: PathBuf, args: &[String]) {
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let output = process::Command::new(&cmd)
         .arg0(cmd_name)
-        .args(args.split_whitespace())
+        .args(args)
         .output();
     match output {
         Ok(output) => {
@@ -134,16 +134,16 @@ fn run_command(cmd: PathBuf, args: &str) {
     }
 }
 
-fn run_builtin_command(cmd: &String, args: String) {
+fn run_builtin_command(cmd: &String, args: &[String]) {
     match cmd.as_str() {
         "exit" => exit(0),
-        "echo" => println!("{}", args),
+        "echo" => println!("{}", args.join(" ")),
         "pwd" => match env::current_dir() {
             Ok(dir) => println!("{}", dir.display()),
             Err(_) => println!("{}: not found", cmd),
         },
         "cd" => {
-            let path = args.split_whitespace().next().unwrap_or_default();
+            let path = args.first().map(|s| s.as_str()).unwrap_or("");
             if path.is_empty() || path == "~" {
                 if let Err(_) = env::set_current_dir(env::var("HOME").unwrap()) {
                     println!("cd: {}: No such file or directory", path);
@@ -154,11 +154,10 @@ fn run_builtin_command(cmd: &String, args: String) {
         }
         "cat" => {
             if let Some(path) = find_command("cat") {
-                run_command(path, &args);
-                println!()
+                run_command(path, args);
             }
         }
-        "type" => run_type(&args),
+        "type" => run_type(args.first().map(|s| s.as_str()).unwrap_or("")),
         _ => println!("{}: not found", cmd),
     }
 }
