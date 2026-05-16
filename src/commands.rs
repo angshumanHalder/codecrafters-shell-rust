@@ -18,20 +18,21 @@ enum CommandKind {
 enum State {
     Default,
     InSingleQuote,
+    InDoubleQuote,
 }
 
 #[derive(Debug, PartialEq)]
 enum ParseError {
     UnclosedSingleQuote,
+    UnclosedDoubleQuote,
 }
 
 pub fn process_command(input: &str) {
     let result = process_input(input);
     match result {
         Ok(full_cmd) => handle_command(full_cmd),
-        Err(ParseError::UnclosedSingleQuote) => {
-            println!("syntax error: unclosed single quote")
-        }
+        Err(ParseError::UnclosedSingleQuote) => println!("syntax error: unclosed single quote"),
+        Err(ParseError::UnclosedDoubleQuote) => println!("syntax error: unclosed double quote"),
     }
 }
 
@@ -60,10 +61,15 @@ fn process_input(input: &str) -> Result<Vec<String>, ParseError> {
                     }
                 }
                 '\'' => state = State::InSingleQuote,
+                '"' => state = State::InDoubleQuote,
                 _ => curr_token.push(c),
             },
             State::InSingleQuote => match c {
                 '\'' => state = State::Default,
+                _ => curr_token.push(c),
+            },
+            State::InDoubleQuote => match c {
+                '"' => state = State::Default,
                 _ => curr_token.push(c),
             },
         }
@@ -73,6 +79,7 @@ fn process_input(input: &str) -> Result<Vec<String>, ParseError> {
     }
     match state {
         State::InSingleQuote => Err(ParseError::UnclosedSingleQuote),
+        State::InDoubleQuote => Err(ParseError::UnclosedDoubleQuote),
         State::Default => Ok(args),
     }
 }
