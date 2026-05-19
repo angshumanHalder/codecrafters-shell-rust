@@ -62,6 +62,10 @@ fn process_input(input: &str) -> Result<Vec<String>, ParseError> {
                 }
                 '\'' => state = State::InSingleQuote,
                 '"' => state = State::InDoubleQuote,
+                '\\' => match chars.next() {
+                    Some(c) => curr_token.push(c),
+                    None => continue,
+                },
                 _ => curr_token.push(c),
             },
             State::InSingleQuote => match c {
