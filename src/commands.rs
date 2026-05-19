@@ -74,6 +74,16 @@ fn process_input(input: &str) -> Result<Vec<String>, ParseError> {
             },
             State::InDoubleQuote => match c {
                 '"' => state = State::Default,
+                '\\' => match chars.peek() {
+                    Some(c) => match c {
+                        '"' | '\\' | '$' | '`' | '\n' => {
+                            curr_token.push(*c);
+                            chars.next();
+                        }
+                        _ => curr_token.push('\\'),
+                    },
+                    None => continue,
+                },
                 _ => curr_token.push(c),
             },
         }
