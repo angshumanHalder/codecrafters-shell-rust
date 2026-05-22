@@ -1,10 +1,12 @@
 use std::env;
 use std::fs;
+use std::fs::OpenOptions;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process;
 use std::process::exit;
+use std::io::Write;
 
 const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd"];
 
@@ -38,10 +40,11 @@ pub fn process_command(input: &str) {
 
 fn handle_command(input: Vec<String>) {
     let cmd = &input[0];
-    let args: Vec<String> = input.get(1..).unwrap_or_default().to_vec();
+    let all_args: Vec<String> = input.get(1..).unwrap_or_default().to_vec();
+    let (args, redirection) = parse_args(all_args);
     match resolve_command(&cmd) {
-        CommandKind::Builtin => run_builtin_command(cmd, &args),
-        CommandKind::External(path) => run_command(path, &args),
+        CommandKind::Builtin => run_builtin_command(cmd, &args, redirection),
+        CommandKind::External(path) => run_command(path, &args, redirection),
         CommandKind::NotFound => println!("{}: not found", cmd),
     }
 }
@@ -135,7 +138,7 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
         .map(|e| e.path())
 }
 
-fn run_command(cmd: PathBuf, args: &[String]) {
+fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) {
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let output = process::Command::new(&cmd)
         .arg0(cmd_name)
@@ -145,7 +148,7 @@ fn run_command(cmd: PathBuf, args: &[String]) {
         Ok(output) => {
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                print!("{}", stderr);
+                eprint!("{}", stderr);
                 return;
             }
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -155,10 +158,13 @@ fn run_command(cmd: PathBuf, args: &[String]) {
     }
 }
 
-fn run_builtin_command(cmd: &String, args: &[String]) {
+fn run_builtin_command(cmd: &String, args: &[String], redirection: Option<Vec<String>>) {
     match cmd.as_str() {
         "exit" => exit(0),
-        "echo" => println!("{}", args.join(" ")),
+        "echo" => match redirection {
+            Some(redi_args) => redirect_output(&format!("{}", args.join(" ")), redi_args),
+            None => println!("{}", args.join(" ")),
+        },
         "pwd" => match env::current_dir() {
             Ok(dir) => println!("{}", dir.display()),
             Err(_) => println!("{}: not found", cmd),
@@ -175,5 +181,31 @@ fn run_builtin_command(cmd: &String, args: &[String]) {
         }
         "type" => run_type(args.first().map(|s| s.as_str()).unwrap_or("")),
         _ => println!("{}: not found", cmd),
+    }
+}
+
+fn parse_args(all_args: Vec<String>) -> (Vec<String>, Option<Vec<String>>) {
+    let redirection_token = [">", "1>"];
+    if let Some(idx) = all_args.iter().position(|s| redirection_token.contains(&s.as_str())) {
+        let args: Vec<String> = all_args[0..idx].to_vec();
+        let redirection: Vec<String> = all_args[idx..].to_vec();
+        (args, Some(redirection))
+    } else {
+        (all_args, None)
+    }
+}
+
+fn redirect_output(output: &String, redi_args: Vec<String>) {
+    if redi_args.len() < 2 {
+        eprintln!("not enough arguments");
+        return 
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(&redi_args[1]).unwrap();
+    match redi_args[0].as_str() {
+        "1>" | ">" => file.write_all(output.as_bytes()).unwrap(),
+        _ => eprintln!("invalid redirection")
     }
 }
