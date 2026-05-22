@@ -139,6 +139,7 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
 }
 
 fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) {
+    println!("{:?}, {:?}", args, redirection);
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let output = process::Command::new(&cmd)
         .arg0(cmd_name)
@@ -194,7 +195,7 @@ fn run_builtin_command(cmd: &String, args: &[String], redirection: Option<Vec<St
 }
 
 fn parse_args(all_args: Vec<String>) -> (Vec<String>, Option<Vec<String>>) {
-    let redirection_token = [">", "1>"];
+    let redirection_token = [">", "1>", "2>"];
     if let Some(idx) = all_args.iter().position(|s| redirection_token.contains(&s.as_str())) {
         let args: Vec<String> = all_args[0..idx].to_vec();
         let redirection: Vec<String> = all_args[idx..].to_vec();
