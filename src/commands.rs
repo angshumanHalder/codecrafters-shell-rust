@@ -162,7 +162,6 @@ fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) 
 }
 
 fn run_builtin_command(cmd: &String, args: &[String], redirection: Option<Vec<String>>) {
-    println!("{:?}, {:?}", args, redirection);
     match cmd.as_str() {
         "exit" => exit(0),
         "echo" => match redirection {
