@@ -162,10 +162,11 @@ fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) 
 }
 
 fn run_builtin_command(cmd: &String, args: &[String], redirection: Option<Vec<String>>) {
+    println!("{:?}, {:?}", args, redirection);
     match cmd.as_str() {
         "exit" => exit(0),
         "echo" => match redirection {
-            Some(redi_args) => redirect_output(&format!("{}", args.join(" ")), redi_args),
+            Some(redi_args) => redirect_output(&format!("{}\n", args.join(" ")), redi_args),
             None => println!("{}", args.join(" ")),
         },
         "pwd" => match env::current_dir() {
