@@ -1,4 +1,5 @@
 use std::env;
+use std::io::{self, Write};
 use std::fs;
 use std::fs::OpenOptions;
 use std::os::unix::fs::PermissionsExt;
@@ -6,7 +7,6 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process;
 use std::process::exit;
-use std::io::Write;
 
 const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd"];
 
@@ -29,6 +29,12 @@ enum ParseError {
     UnclosedDoubleQuote,
 }
 
+struct Redirection {
+    fd: u8,
+    append: bool,
+    target: String,
+}
+
 pub fn process_command(input: &str) {
     let result = process_input(input);
     match result {
@@ -41,10 +47,20 @@ pub fn process_command(input: &str) {
 fn handle_command(input: Vec<String>) {
     let cmd = &input[0];
     let all_args: Vec<String> = input.get(1..).unwrap_or_default().to_vec();
-    let (args, redirection) = parse_args(all_args);
-    match resolve_command(&cmd) {
-        CommandKind::Builtin => run_builtin_command(cmd, &args, redirection),
-        CommandKind::External(path) => run_command(path, &args, redirection),
+    let (args, redirections) = parse_args(all_args);
+    match resolve_command(cmd) {
+        CommandKind::Builtin => {
+            let mut stdout: Box<dyn Write> = match redirections.iter().find(|r| r.fd == 1) {
+                Some(r) => Box::new(open_redirect_file(r)),
+                None => Box::new(io::stdout())
+            };
+            let mut stderr: Box<dyn Write> = match redirections.iter().find(|r| r.fd == 1) {
+                Some(r) => Box::new(open_redirect_file(r)),
+                None => Box::new(io::stderr())
+            };
+            run_builtin_command(cmd, &args, &mut *stdout, &mut *stderr);
+        }
+        CommandKind::External(path) => run_command(path, &args, redirections),
         CommandKind::NotFound => println!("{}: not found", cmd),
     }
 }
@@ -116,11 +132,11 @@ fn is_builtin(cmd: &str) -> bool {
     BUILTINS.contains(&cmd)
 }
 
-fn run_type(cmd: &str) {
+fn run_type(cmd: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) {
     match resolve_command(cmd) {
-        CommandKind::Builtin => println!("{} is a shell builtin", cmd),
-        CommandKind::External(path) => println!("{} is {}", cmd, path.display()),
-        CommandKind::NotFound => println!("{}: not found", cmd),
+        CommandKind::Builtin => writeln!(stdout, "{} is a shell builtin", cmd).unwrap(),
+        CommandKind::External(path) => writeln!(stdout, "{} is {}", cmd, path.display()).unwrap(),
+        CommandKind::NotFound => writeln!(stderr, "{}: not found", cmd).unwrap(),
     }
 }
 
@@ -138,84 +154,86 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
         .map(|e| e.path())
 }
 
-fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) {
+fn run_command(cmd: PathBuf, args: &[String], redirections: Vec<Redirection>) {
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let output = process::Command::new(&cmd)
+    let stdout_stdio = match redirections.iter().find(|r| r.fd == 1) {
+        Some(r) => process::Stdio::from(open_redirect_file(r)),
+        None => process::Stdio::inherit()
+    };
+    let stderr_stdio = match redirections.iter().find(|r| r.fd == 2) {
+        Some(r) => process::Stdio::from(open_redirect_file(r)),
+        None => process::Stdio::inherit(),
+    };
+    let status = process::Command::new(&cmd)
         .arg0(cmd_name)
         .args(args)
-        .output();
-    match output {
-        Ok(output) => match redirection {
-            Some(redi_args) => {
-                if !output.stderr.is_empty() {
-                    redirect_output(&format!("{}", String::from_utf8_lossy(&output.stderr)), redi_args);
-                } else {
-                    redirect_output(&format!("{}", String::from_utf8_lossy(&output.stdout)), redi_args);
-                }
-            }
-            None => {
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                eprint!("{}", stderr);
-                return;
-            }
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            print!("{}", stdout);
-        }
-        } 
-        Err(_) => print!("Failed to execute command"),
+        .stdout(stdout_stdio)
+        .stderr(stderr_stdio)
+        .spawn()
+        .and_then(|mut child| child.wait());
+
+    if let Err(e) = status {
+        eprintln!("Failed to execute command: {}", e);
     }
 }
 
-fn run_builtin_command(cmd: &String, args: &[String], redirection: Option<Vec<String>>) {
-    match cmd.as_str() {
+fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) {
+    match cmd {
         "exit" => exit(0),
-        "echo" => match redirection {
-            Some(redi_args) => redirect_output(&format!("{}\n", args.join(" ")), redi_args),
-            None => println!("{}", args.join(" ")),
-        },
+        "echo" => writeln!(stdout, "{}", args.join(" ")).unwrap(),
         "pwd" => match env::current_dir() {
-            Ok(dir) => println!("{}", dir.display()),
-            Err(_) => println!("{}: not found", cmd),
+            Ok(dir) => writeln!(stdout, "{}", dir.display()).unwrap(),
+            Err(_) => writeln!(stderr, "pwd: error retrieving directory").unwrap(),
         },
         "cd" => {
             let path = args.first().map(|s| s.as_str()).unwrap_or("");
-            if path.is_empty() || path == "~" {
-                if let Err(_) = env::set_current_dir(env::var("HOME").unwrap()) {
-                    println!("cd: {}: No such file or directory", path);
-                }
-            } else if let Err(_) = env::set_current_dir(path) {
-                println!("cd: {}: No such file or directory", path);
+            let target = if path.is_empty() || path == "~" {
+                env::var("HOME").unwrap_or_default()
+            } else { 
+                path.to_string()
+            };
+            if let Err(_) = env::set_current_dir(&target) {
+                writeln!(stderr, "cd: {}: No such file or directory", target).unwrap()
             }
         }
-        "type" => run_type(args.first().map(|s| s.as_str()).unwrap_or("")),
-        _ => println!("{}: not found", cmd),
+        "type" => run_type(args.first().map(|s| s.as_str()).unwrap_or(""), stdout, stderr),
+        _ => writeln!(stderr, "{}: not found", cmd).unwrap(),
     }
 }
 
-fn parse_args(all_args: Vec<String>) -> (Vec<String>, Option<Vec<String>>) {
-    let redirection_token = [">", "1>", "2>"];
-    if let Some(idx) = all_args.iter().position(|s| redirection_token.contains(&s.as_str())) {
-        let args: Vec<String> = all_args[0..idx].to_vec();
-        let redirection: Vec<String> = all_args[idx..].to_vec();
-        (args, Some(redirection))
-    } else {
-        (all_args, None)
+fn parse_args(all_args: Vec<String>) -> (Vec<String>, Vec<Redirection>) {
+    let mut redirections = Vec::new();
+    let mut args = Vec::new();
+    let mut i = 0;
+    while i < all_args.len() {
+        let token = all_args[i].as_str();
+        match token {
+            ">" | "1>" | "2>" | ">>" | "1>>" | "2>>" => {
+                if i + 1 >= all_args.len() {
+                    eprintln!("syntax error: expected file after redirection");
+                    return (args, redirections)
+                }
+                let fd = if token.starts_with('2') { 2 } else { 1 };
+                let append = token.ends_with(">>");
+                let target = all_args[i + 1].clone();
+                redirections.push(Redirection { fd, append, target });
+                i += 2;
+            }
+            _ => {
+                args.push(all_args[i].clone());
+                i += 1;
+            }
+        }
     }
+    (args, redirections)
 }
 
-fn redirect_output(output: &String, redi_args: Vec<String>) {
-    if redi_args.len() < 2 {
-        eprintln!("not enough arguments");
-        return 
-    }
-    let mut file = OpenOptions::new()
+fn open_redirect_file(r: &Redirection) -> std::fs::File {
+    OpenOptions::new()
         .write(true)
         .create(true)
-        .open(&redi_args[1]).unwrap();
-    match redi_args[0].as_str() {
-        "1>" | ">" => file.write_all(output.as_bytes()).unwrap(),
-        "2>" => file.write_all(output.as_bytes()).unwrap(),
-        _ => eprintln!("{}", output),
-    }
+        .append(r.append)
+        .truncate(!r.append)
+        .open(&r.target)
+        .unwrap()
 }
