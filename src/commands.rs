@@ -54,7 +54,7 @@ fn handle_command(input: Vec<String>) {
                 Some(r) => Box::new(open_redirect_file(r)),
                 None => Box::new(io::stdout())
             };
-            let mut stderr: Box<dyn Write> = match redirections.iter().find(|r| r.fd == 1) {
+            let mut stderr: Box<dyn Write> = match redirections.iter().find(|r| r.fd == 2) {
                 Some(r) => Box::new(open_redirect_file(r)),
                 None => Box::new(io::stderr())
             };
