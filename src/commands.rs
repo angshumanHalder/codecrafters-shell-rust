@@ -229,6 +229,10 @@ fn parse_args(all_args: Vec<String>) -> (Vec<String>, Vec<Redirection>) {
 }
 
 fn open_redirect_file(r: &Redirection) -> std::fs::File {
+    let path = std::path::Path::new(&r.target);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
     OpenOptions::new()
         .write(true)
         .create(true)
