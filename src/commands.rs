@@ -145,7 +145,9 @@ fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) 
         .args(args)
         .output();
     match output {
-        Ok(output) => {
+        Ok(output) => match redirection {
+            Some(redi_args) => redirect_output(&format!("{}", String::from_utf8_lossy(&output.stdout)), redi_args),
+            None => {
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 eprint!("{}", stderr);
@@ -154,6 +156,7 @@ fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) 
             let stdout = String::from_utf8_lossy(&output.stdout);
             print!("{}", stdout);
         }
+        } 
         Err(_) => print!("Failed to execute command"),
     }
 }
