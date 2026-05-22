@@ -139,7 +139,6 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
 }
 
 fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) {
-    println!("{:?}, {:?}", args, redirection);
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let output = process::Command::new(&cmd)
         .arg0(cmd_name)
