@@ -147,9 +147,10 @@ fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) 
     match output {
         Ok(output) => match redirection {
             Some(redi_args) => {
-                redirect_output(&format!("{}", String::from_utf8_lossy(&output.stdout)), redi_args);
                 if !output.stderr.is_empty() {
-                    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+                    redirect_output(&format!("{}", String::from_utf8_lossy(&output.stderr)), redi_args);
+                } else {
+                    redirect_output(&format!("{}", String::from_utf8_lossy(&output.stdout)), redi_args);
                 }
             }
             None => {
@@ -214,6 +215,7 @@ fn redirect_output(output: &String, redi_args: Vec<String>) {
         .open(&redi_args[1]).unwrap();
     match redi_args[0].as_str() {
         "1>" | ">" => file.write_all(output.as_bytes()).unwrap(),
-        _ => eprintln!("invalid redirection")
+        "2>" => file.write_all(output.as_bytes()).unwrap(),
+        _ => eprintln!("{}", output),
     }
 }
