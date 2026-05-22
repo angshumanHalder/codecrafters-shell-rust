@@ -146,7 +146,12 @@ fn run_command(cmd: PathBuf, args: &[String], redirection: Option<Vec<String>>) 
         .output();
     match output {
         Ok(output) => match redirection {
-            Some(redi_args) => redirect_output(&format!("{}", String::from_utf8_lossy(&output.stdout)), redi_args),
+            Some(redi_args) => {
+                redirect_output(&format!("{}", String::from_utf8_lossy(&output.stdout)), redi_args);
+                if !output.stderr.is_empty() {
+                    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+                }
+            }
             None => {
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
