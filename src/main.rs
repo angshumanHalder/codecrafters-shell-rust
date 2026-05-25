@@ -5,14 +5,17 @@ use std::fs;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 
-use rustyline::completion::{Completer, Pair};
+use rustyline::completion::{Completer, FilenameCompleter, Pair, extract_word};
 use rustyline::{Config, Editor, Result};
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
 use crate::commands::BUILTINS;
 
 #[derive(Helper, Hinter, Highlighter, Validator)]
-struct ShellHelper;
+struct ShellHelper {
+    #[rustyline(Completer)]
+    file_completer: FilenameCompleter,
+}
 
 impl Completer for ShellHelper {
     type Candidate = Pair;
@@ -20,11 +23,16 @@ impl Completer for ShellHelper {
         &self, // FIXME should be `&mut self`
         line: &str,
         pos: usize,
-        _ctx: &rustyline::Context<'_>,
+        ctx: &rustyline::Context<'_>,
     ) -> Result<(usize, Vec<Self::Candidate>)> {
-        let word = &line[0..pos];
-        let matches = find_completions(word);
-        Ok((0, matches))
+        let (start_idx, current_word) = extract_word(line, pos, None, is_break_char);
+        let is_cmd_completion = line[..start_idx].trim().is_empty();
+        if is_cmd_completion {
+            let matches = find_completions(current_word);
+            Ok((0, matches))
+        } else {
+            self.file_completer.complete(line, pos, ctx)
+        }
     }
 }
 
@@ -37,7 +45,10 @@ fn repl() -> Result<()> {
         .completion_type(rustyline::CompletionType::List)
         .build();
     let mut rl = Editor::with_config(config)?;
-    rl.set_helper(Some(ShellHelper));
+    let shell_helper = ShellHelper {
+        file_completer: FilenameCompleter::new(),
+    };
+    rl.set_helper(Some(shell_helper));
     loop {
         let readline = rl.readline("$ ");
         match readline {
@@ -81,4 +92,8 @@ fn find_completions(prefix: &str) -> Vec<Pair> {
             replacement: format!("{} ", m),
         })
         .collect()
+}
+
+fn is_break_char(c: char) -> bool {
+    [' ', '\t', '"', '\''].contains(&c)
 }
