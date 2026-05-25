@@ -4,6 +4,7 @@ use std::fs;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 use rustyline::completion::{Completer, FilenameCompleter, Pair, extract_word};
 use rustyline::{Config, Editor, Result};
@@ -29,9 +30,16 @@ impl Completer for ShellHelper {
         let is_cmd_completion = line[..start_idx].trim().is_empty();
         if is_cmd_completion {
             let matches = find_completions(current_word);
-            Ok((0, matches))
+            Ok((start_idx, matches))
         } else {
-            self.file_completer.complete(line, pos, ctx)
+            let (start, mut file_matches) = self.file_completer.complete(line, pos, ctx)?;
+            for p in &mut file_matches {
+                let path = Path::new(&p.replacement);
+                if path.is_file() {
+                    p.replacement.push(' ');
+                }
+            }
+            Ok((start, file_matches))
         }
     }
 }
