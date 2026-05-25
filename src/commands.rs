@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process;
 use std::process::exit;
 
-pub const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd"];
+pub const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "complete"];
 
 enum CommandKind {
     Builtin,
