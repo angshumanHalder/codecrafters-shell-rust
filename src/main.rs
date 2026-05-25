@@ -77,20 +77,20 @@ fn find_completions(prefix: &str) -> Vec<Pair> {
         .iter()
         .filter(|b| b.starts_with(prefix))
         .map(|b| b.to_string())
-        .collect();
-    let path_matches: Vec<String> = std::env::split_paths(&full_path)
-        .flat_map(|dir| fs::read_dir(dir).ok().into_iter().flatten())
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.metadata()
-                .map(|m| m.permissions().mode() & 0o111 != 0)
-                .unwrap_or(false)
-        })
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|name| name.starts_with(prefix))
+        .chain(
+            std::env::split_paths(&full_path)
+                .flat_map(|dir| fs::read_dir(dir).ok().into_iter().flatten())
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.metadata()
+                        .map(|m| m.permissions().mode() & 0o111 != 0)
+                        .unwrap_or(false)
+                })
+                .filter_map(|e| e.file_name().into_string().ok())
+                .filter(|name| name.starts_with(prefix)),
+        )
         .collect();
 
-    matches.extend(path_matches);
     matches.sort();
     matches.dedup();
     matches
@@ -103,5 +103,5 @@ fn find_completions(prefix: &str) -> Vec<Pair> {
 }
 
 fn is_break_char(c: char) -> bool {
-    [' ', '\t', '"', '\''].contains(&c)
+    matches!(c, ' ' | '\t' | '"' | '\'')
 }
