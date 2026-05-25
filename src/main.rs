@@ -33,10 +33,14 @@ impl Completer for ShellHelper {
             Ok((start_idx, matches))
         } else {
             let (start, mut file_matches) = self.file_completer.complete(line, pos, ctx)?;
+            let is_multiple = file_matches.len() > 1;
+            println!("{}", is_multiple);
             for p in &mut file_matches {
                 let path = Path::new(&p.replacement);
                 if path.is_file() {
                     p.replacement.push(' ');
+                } else if path.is_dir() && is_multiple {
+                    p.display.push(std::path::MAIN_SEPARATOR);
                 }
             }
             Ok((start, file_matches))
