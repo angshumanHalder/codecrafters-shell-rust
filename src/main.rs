@@ -34,7 +34,6 @@ impl Completer for ShellHelper {
         } else {
             let (start, mut file_matches) = self.file_completer.complete(line, pos, ctx)?;
             let is_multiple = file_matches.len() > 1;
-            println!("{}", is_multiple);
             for p in &mut file_matches {
                 let path = Path::new(&p.replacement);
                 if path.is_file() {
