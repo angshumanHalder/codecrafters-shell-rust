@@ -3,7 +3,7 @@ mod commands;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
-use rustyline::completion::{Candidate, Completer, Pair};
+use rustyline::completion::{Completer, Pair};
 use rustyline::{Editor, Result, error::ReadlineError};
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
