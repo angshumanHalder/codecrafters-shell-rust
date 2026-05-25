@@ -18,7 +18,7 @@ impl Completer for ReplHelper {
         &self, // FIXME should be `&mut self`
         line: &str,
         pos: usize,
-        ctx: &rustyline::Context<'_>,
+        _ctx: &rustyline::Context<'_>,
     ) -> Result<(usize, Vec<Self::Candidate>)> {
         let mut candidates: Vec<Pair> = Vec::new();
         for cmd in BUILTINS {
