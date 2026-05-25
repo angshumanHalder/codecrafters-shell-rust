@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::process;
 use std::process::exit;
 
+pub const BUILTINS: &[&str] = &["exit", "echo", "ech1", "pwd", "type", "cd"];
+
 enum CommandKind {
     Builtin,
     External(PathBuf),
@@ -127,7 +129,7 @@ fn resolve_command(cmd: &str) -> CommandKind {
 }
 
 fn is_builtin(cmd: &str) -> bool {
-    super::BUILTINS.contains(&cmd)
+    BUILTINS.contains(&cmd)
 }
 
 fn run_type(cmd: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) {
