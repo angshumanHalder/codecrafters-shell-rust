@@ -1,14 +1,12 @@
 use std::env;
-use std::io::{self, Write};
 use std::fs;
 use std::fs::OpenOptions;
+use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process;
 use std::process::exit;
-
-const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd"];
 
 enum CommandKind {
     Builtin,
@@ -52,11 +50,11 @@ fn handle_command(input: Vec<String>) {
         CommandKind::Builtin => {
             let mut stdout: Box<dyn Write> = match redirections.iter().find(|r| r.fd == 1) {
                 Some(r) => Box::new(open_redirect_file(r)),
-                None => Box::new(io::stdout())
+                None => Box::new(io::stdout()),
             };
             let mut stderr: Box<dyn Write> = match redirections.iter().find(|r| r.fd == 2) {
                 Some(r) => Box::new(open_redirect_file(r)),
-                None => Box::new(io::stderr())
+                None => Box::new(io::stderr()),
             };
             run_builtin_command(cmd, &args, &mut *stdout, &mut *stderr);
         }
@@ -129,7 +127,7 @@ fn resolve_command(cmd: &str) -> CommandKind {
 }
 
 fn is_builtin(cmd: &str) -> bool {
-    BUILTINS.contains(&cmd)
+    super::BUILTINS.contains(&cmd)
 }
 
 fn run_type(cmd: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) {
@@ -158,7 +156,7 @@ fn run_command(cmd: PathBuf, args: &[String], redirections: Vec<Redirection>) {
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let stdout_stdio = match redirections.iter().find(|r| r.fd == 1) {
         Some(r) => process::Stdio::from(open_redirect_file(r)),
-        None => process::Stdio::inherit()
+        None => process::Stdio::inherit(),
     };
     let stderr_stdio = match redirections.iter().find(|r| r.fd == 2) {
         Some(r) => process::Stdio::from(open_redirect_file(r)),
@@ -189,14 +187,18 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             let path = args.first().map(|s| s.as_str()).unwrap_or("");
             let target = if path.is_empty() || path == "~" {
                 env::var("HOME").unwrap_or_default()
-            } else { 
+            } else {
                 path.to_string()
             };
             if let Err(_) = env::set_current_dir(&target) {
                 writeln!(stderr, "cd: {}: No such file or directory", target).unwrap()
             }
         }
-        "type" => run_type(args.first().map(|s| s.as_str()).unwrap_or(""), stdout, stderr),
+        "type" => run_type(
+            args.first().map(|s| s.as_str()).unwrap_or(""),
+            stdout,
+            stderr,
+        ),
         _ => writeln!(stderr, "{}: not found", cmd).unwrap(),
     }
 }
@@ -211,7 +213,7 @@ fn parse_args(all_args: Vec<String>) -> (Vec<String>, Vec<Redirection>) {
             ">" | "1>" | "2>" | ">>" | "1>>" | "2>>" => {
                 if i + 1 >= all_args.len() {
                     eprintln!("syntax error: expected file after redirection");
-                    return (args, redirections)
+                    return (args, redirections);
                 }
                 let fd = if token.starts_with('2') { 2 } else { 1 };
                 let append = token.ends_with(">>");
