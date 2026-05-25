@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 
 use rustyline::completion::{Completer, Pair};
-use rustyline::{Editor, Result};
+use rustyline::{Config, Editor, Result};
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
 use crate::commands::BUILTINS;
@@ -33,13 +33,16 @@ fn main() -> Result<()> {
 }
 
 fn repl() -> Result<()> {
-    let mut rl = Editor::new()?;
+    let config = Config::builder()
+        .completion_type(rustyline::CompletionType::List)
+        .build();
+    let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(ShellHelper));
     loop {
         let readline = rl.readline("$ ");
         match readline {
             Ok(line) => {
-                commands::process_command(&line);
+                commands::process_command(&line.trim());
             }
             Err(_) => {
                 break;
