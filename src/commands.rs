@@ -185,6 +185,16 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             Ok(dir) => writeln!(stdout, "{}", dir.display()).unwrap(),
             Err(_) => writeln!(stderr, "pwd: error retrieving directory").unwrap(),
         },
+        "complete" => match args[0] {
+            _ => {
+                let completion_command = &args[1];
+                writeln!(
+                    stderr,
+                    "complete: {completion_command}: no completion specification"
+                )
+                .unwrap()
+            }
+        },
         "cd" => {
             let path = args.first().map(|s| s.as_str()).unwrap_or("");
             let target = if path.is_empty() || path == "~" {
