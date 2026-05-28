@@ -10,7 +10,7 @@ use std::process::exit;
 
 use crate::get_completions;
 
-pub const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "complete"];
+pub const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "complete", "jobs"];
 
 enum CommandKind {
     Builtin,
@@ -204,6 +204,7 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             stdout,
             stderr,
         ),
+        "jobs" => writeln!(stdout, "").unwrap(),
         _ => writeln!(stderr, "{}: not found", cmd).unwrap(),
     }
 }
