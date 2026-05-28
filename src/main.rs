@@ -1,16 +1,20 @@
 mod commands;
 
+use std::collections::HashMap;
 use std::fs;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use rustyline::completion::{Completer, FilenameCompleter, Pair, extract_word};
 use rustyline::{Config, Editor, Result};
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
 use crate::commands::BUILTINS;
+
+static COMPLETIONS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 #[derive(Helper, Hinter, Highlighter, Validator)]
 struct ShellHelper {
@@ -107,4 +111,8 @@ fn find_completions(prefix: &str) -> Vec<Pair> {
 
 fn is_break_char(c: char) -> bool {
     matches!(c, ' ' | '\t' | '"' | '\'')
+}
+
+fn get_completions() -> &'static Mutex<HashMap<String, String>> {
+    COMPLETIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }

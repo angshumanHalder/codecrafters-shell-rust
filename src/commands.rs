@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::process;
 use std::process::exit;
 
+use crate::get_completions;
+
 pub const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "complete"];
 
 enum CommandKind {
@@ -185,16 +187,7 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             Ok(dir) => writeln!(stdout, "{}", dir.display()).unwrap(),
             Err(_) => writeln!(stderr, "pwd: error retrieving directory").unwrap(),
         },
-        "complete" => match args[0] {
-            _ => {
-                let completion_command = &args[1];
-                writeln!(
-                    stderr,
-                    "complete: {completion_command}: no completion specification"
-                )
-                .unwrap()
-            }
-        },
+        "complete" => handle_complete(&args, stdout, stderr),
         "cd" => {
             let path = args.first().map(|s| s.as_str()).unwrap_or("");
             let target = if path.is_empty() || path == "~" {
@@ -254,4 +247,31 @@ fn open_redirect_file(r: &Redirection) -> std::fs::File {
         .truncate(!r.append)
         .open(&r.target)
         .unwrap()
+}
+
+fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) {
+    match args[0].as_str() {
+        "-C" => {
+            if args.len() < 3 {
+                writeln!(stderr, "complete: usage: complete -C <script> <command>").unwrap();
+            }
+            let script = args[1].clone();
+            let cmd = args[2].clone();
+            get_completions().lock().unwrap().insert(cmd, script);
+        }
+        "-p" => {
+            if args.len() < 2 {
+                writeln!(stderr, "complete: usage: complete -C <script> <command>").unwrap();
+            }
+            let cmd = args[1].clone();
+            if let Some(script) = get_completions().lock().unwrap().get(&cmd) {
+                writeln!(stdout, "complete -C '{}' {}", script, cmd).unwrap();
+                return;
+            }
+            std::process::exit(1);
+        }
+        _ => {
+            writeln!(stderr, "complete: unsupported option: {}", args[0]).unwrap();
+        }
+    }
 }
