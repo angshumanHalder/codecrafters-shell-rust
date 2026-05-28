@@ -254,6 +254,7 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
         "-C" => {
             if args.len() < 3 {
                 writeln!(stderr, "complete: usage: complete -C <script> <command>").unwrap();
+                return;
             }
             let script = args[1].clone();
             let cmd = args[2].clone();
@@ -262,6 +263,7 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
         "-p" => {
             if args.len() < 2 {
                 writeln!(stderr, "complete: usage: complete -C <script> <command>").unwrap();
+                return;
             }
             let cmd = args[1].clone();
             if let Some(script) = get_completions().lock().unwrap().get(&cmd) {
