@@ -1,6 +1,7 @@
 mod commands;
 
 use std::collections::HashMap;
+use std::fmt::format;
 use std::fs;
 #[allow(unused_imports)]
 use std::io::{self, Write};
@@ -36,17 +37,48 @@ impl Completer for ShellHelper {
             let matches = find_completions(current_word);
             Ok((start_idx, matches))
         } else {
-            let (start, mut file_matches) = self.file_completer.complete(line, pos, ctx)?;
-            let is_multiple = file_matches.len() > 1;
-            for p in &mut file_matches {
-                let path = Path::new(&p.replacement);
-                if path.is_file() {
-                    p.replacement.push(' ');
-                } else if path.is_dir() && is_multiple {
-                    p.display.push(std::path::MAIN_SEPARATOR);
+            let words: Vec<&str> = line[..pos].split_whitespace().collect();
+            let prev_word = if current_word.is_empty() {
+                words.last().copied().unwrap_or("")
+            } else {
+                words
+                    .get(words.len().saturating_sub(2))
+                    .copied()
+                    .unwrap_or("")
+            };
+            let cmd = line.split_whitespace().next().unwrap_or("");
+            if let Some(completer_script) = get_completions().lock().unwrap().get(cmd) {
+                let output = std::process::Command::new(&completer_script)
+                    .arg(cmd)
+                    .arg(current_word)
+                    .arg(prev_word)
+                    .env("COMP_LINE", line)
+                    .env("COMP_POINT", pos.to_string())
+                    .output();
+                let mut candidates: Vec<Pair> = Vec::new();
+                if let Ok(out) = output {
+                    candidates = String::from_utf8_lossy(&out.stdout)
+                        .lines()
+                        .map(|l| Pair {
+                            display: l.to_string(),
+                            replacement: format!("{} ", l),
+                        })
+                        .collect();
                 }
+                return Ok((start_idx, candidates));
+            } else {
+                let (start, mut file_matches) = self.file_completer.complete(line, pos, ctx)?;
+                let is_multiple = file_matches.len() > 1;
+                for p in &mut file_matches {
+                    let path = Path::new(&p.replacement);
+                    if path.is_file() {
+                        p.replacement.push(' ');
+                    } else if path.is_dir() && is_multiple {
+                        p.display.push(std::path::MAIN_SEPARATOR);
+                    }
+                }
+                Ok((start, file_matches))
             }
-            Ok((start, file_matches))
         }
     }
 }
