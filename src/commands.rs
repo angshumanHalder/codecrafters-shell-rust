@@ -262,7 +262,7 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
         }
         "-p" => {
             if args.len() < 2 {
-                writeln!(stderr, "complete: usage: complete -C <script> <command>").unwrap();
+                writeln!(stderr, "complete: usage: complete -p <command>").unwrap();
                 return;
             }
             let cmd = args[1].clone();
@@ -271,6 +271,14 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
                 return;
             }
             writeln!(stderr, "complete: {}: no completion specification", cmd).unwrap();
+        }
+        "-r" => {
+            if args.len() < 2 {
+                writeln!(stderr, "complete: usage: complete -r <command>").unwrap();
+                return;
+            }
+            let cmd = args[1].clone();
+            get_completions().lock().unwrap().remove_entry(&cmd);
         }
         _ => {
             writeln!(stderr, "complete: unsupported option: {}", args[0]).unwrap();

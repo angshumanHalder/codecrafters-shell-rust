@@ -1,7 +1,6 @@
 mod commands;
 
 use std::collections::HashMap;
-use std::fmt::format;
 use std::fs;
 #[allow(unused_imports)]
 use std::io::{self, Write};
