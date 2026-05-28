@@ -204,7 +204,7 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             stdout,
             stderr,
         ),
-        "jobs" => writeln!(stdout, "").unwrap(),
+        "jobs" => {}
         _ => writeln!(stderr, "{}: not found", cmd).unwrap(),
     }
 }
