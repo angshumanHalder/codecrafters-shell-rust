@@ -268,7 +268,7 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
                 writeln!(stdout, "complete -C '{}' {}", script, cmd).unwrap();
                 return;
             }
-            std::process::exit(1);
+            writeln!(stderr, "complete: {}: no completion specification", cmd).unwrap();
         }
         _ => {
             writeln!(stderr, "complete: unsupported option: {}", args[0]).unwrap();
