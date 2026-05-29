@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::process;
 use std::process::exit;
 
-use crate::JOBS;
 use crate::get_completions;
 use crate::get_jobs;
 
@@ -245,7 +244,7 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             stdout,
             stderr,
         ),
-        "jobs" => {}
+        "jobs" => list_jobs(stdout),
         _ => writeln!(stderr, "{}: not found", cmd).unwrap(),
     }
 }
@@ -325,5 +324,23 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
         _ => {
             writeln!(stderr, "complete: unsupported option: {}", args[0]).unwrap();
         }
+    }
+}
+
+fn list_jobs(stdout: &mut dyn Write) {
+    let jobs = get_jobs().lock().unwrap();
+    for (i, job) in jobs.iter().rev().enumerate() {
+        let job_num = i + 1;
+        let status = match job.status {
+            JobStatus::Running => format!("{:<24}", "Running"),
+            JobStatus::Done => format!("{:<24}", "Done"),
+            JobStatus::Stopped => format!("{:<24}", "Stopped"),
+        };
+        let cmd = job.cmd.clone();
+        let mut out = format!("[{}]  {}{}", job_num, status, cmd);
+        if i == jobs.len() - 1 {
+            out = format!("[{}]+  {}{}", job_num, status, cmd);
+        }
+        writeln!(stdout, "{}", out).unwrap();
     }
 }
