@@ -113,11 +113,7 @@ fn handle_command(input: Vec<String>) {
             run_builtin_command(cmd, &args, &mut *stdout, &mut *stderr);
         }
         CommandKind::External(path) => {
-            let full_cmd = if is_background {
-                format!("{} &", input.join(" "))
-            } else {
-                input.join(" ")
-            };
+            let full_cmd = input.join(" ");
             run_command(path, &args, redirections, is_background, full_cmd)
         }
         CommandKind::NotFound => println!("{}: not found", cmd),
@@ -401,7 +397,9 @@ fn list_jobs(stdout: &mut dyn Write) {
         job_table.free_job_id(job.job_id);
     }
     let current = job_table.current_job_id;
-    job_table.prev_job_id = job_table.jobs.iter()
+    job_table.prev_job_id = job_table
+        .jobs
+        .iter()
         .filter(|j| Some(j.job_id) != current)
         .map(|j| j.job_id)
         .max();
