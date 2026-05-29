@@ -113,7 +113,11 @@ fn handle_command(input: Vec<String>) {
             run_builtin_command(cmd, &args, &mut *stdout, &mut *stderr);
         }
         CommandKind::External(path) => {
-            let full_cmd = input.join(" ");
+            let full_cmd = if is_background {
+                format!("{} &", input.join(" "))
+            } else {
+                input.join(" ")
+            };
             run_command(path, &args, redirections, is_background, full_cmd)
         }
         CommandKind::NotFound => println!("{}: not found", cmd),
