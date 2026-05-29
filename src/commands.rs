@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
@@ -8,8 +9,13 @@ use std::path::PathBuf;
 use std::process;
 use std::process::exit;
 
+use nix::sys::wait::WaitPidFlag;
+use nix::sys::wait::WaitStatus;
+use nix::sys::wait::waitpid;
+use nix::unistd::Pid;
+
 use crate::get_completions;
-use crate::get_jobs;
+use crate::get_job_table;
 
 pub const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "complete", "jobs"];
 
@@ -38,7 +44,14 @@ struct Redirection {
     target: String,
 }
 
+pub struct JobTable {
+    pub jobs: Vec<JobEntry>,
+    pub free_list: BTreeSet<usize>,
+    pub next_id: usize,
+}
+
 pub struct JobEntry {
+    job_id: usize,
     pid: u32,
     status: JobStatus,
     cmd: String,
@@ -48,6 +61,22 @@ enum JobStatus {
     Running,
     Stopped,
     Done,
+}
+
+impl JobTable {
+    fn allocate_job_id(&mut self) -> usize {
+        if let Some(next_id) = self.free_list.pop_first() {
+            next_id
+        } else {
+            let old_id = self.next_id;
+            self.next_id += 1;
+            old_id
+        }
+    }
+
+    fn free_job_id(&mut self, id: usize) {
+        self.free_list.insert(id);
+    }
 }
 
 pub fn process_command(input: &str) {
@@ -203,15 +232,17 @@ fn run_command(
         Err(e) => eprintln!("Failed to execute command: {}", e),
         Ok(mut child) => {
             if is_background {
-                let mut jobs = get_jobs().lock().unwrap();
-                let job_num = jobs.len() + 1;
+                let mut job_table = get_job_table().lock().unwrap();
+                let job_id = job_table.allocate_job_id();
                 let pid = child.id();
+                let jobs = &mut job_table.jobs;
                 jobs.push(JobEntry {
+                    job_id,
                     pid,
                     status: JobStatus::Running,
                     cmd: full_cmd,
                 });
-                println!("[{}] {}", job_num, pid);
+                println!("[{}] {}", job_id, pid);
             } else {
                 let _ = child.wait();
             }
@@ -328,15 +359,16 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
 }
 
 fn list_jobs(stdout: &mut dyn Write) {
-    let jobs = get_jobs().lock().unwrap();
+    let job_table = get_job_table().lock().unwrap();
+    let jobs = &job_table.jobs;
     for (i, job) in jobs.iter().enumerate() {
-        let job_num = i + 1;
+        let job_num = job.job_id;
         let status = match job.status {
             JobStatus::Running => format!("{:<24}", "Running"),
             JobStatus::Done => format!("{:<24}", "Done"),
             JobStatus::Stopped => format!("{:<24}", "Stopped"),
         };
-        let cmd = job.cmd.clone();
+        let cmd = &job.cmd;
         let mut out = format!("[{}]  {}{}", job_num, status, cmd);
         if i == jobs.len() - 1 {
             out = format!("[{}]+  {}{}", job_num, status, cmd);
@@ -344,5 +376,34 @@ fn list_jobs(stdout: &mut dyn Write) {
             out = format!("[{}]-  {}{}", job_num, status, cmd);
         }
         writeln!(stdout, "{}", out).unwrap();
+    }
+}
+
+pub fn reap_children() {
+    let mut to_remove: Vec<usize> = Vec::new();
+    let mut job_table = get_job_table().lock().unwrap();
+    for (i, job) in job_table.jobs.iter_mut().enumerate() {
+        match waitpid(Pid::from_raw(job.pid as i32), Some(WaitPidFlag::WNOHANG)) {
+            Ok(WaitStatus::Exited(_pid, _signal)) => {
+                job.status = JobStatus::Done;
+                to_remove.push(i);
+            }
+            Ok(WaitStatus::Signaled(_pid, _signal, _)) => {
+                job.status = JobStatus::Done;
+                to_remove.push(i);
+            }
+            Ok(WaitStatus::Stopped(_pid, _signal)) => {
+                job.status = JobStatus::Stopped;
+            }
+            Ok(WaitStatus::StillAlive) => {}
+            Err(_) => {}
+            _ => {}
+        }
+    }
+    for i in to_remove.iter().rev() {
+        let job = job_table.jobs.remove(*i);
+        job_table.free_job_id(job.job_id);
+        let out = format!("[{}]+ {:<24}{}", job.job_id, "Done", job.cmd);
+        println!("{}", out);
     }
 }

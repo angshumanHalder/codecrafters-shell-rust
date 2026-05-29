@@ -1,6 +1,6 @@
 mod commands;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 #[allow(unused_imports)]
 use std::io::{self, Write};
@@ -12,11 +12,11 @@ use rustyline::completion::{Completer, FilenameCompleter, Pair, extract_word};
 use rustyline::{Config, Editor, Result};
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
-use crate::commands::BUILTINS;
-use crate::commands::JobEntry;
+use crate::commands::JobTable;
+use crate::commands::{BUILTINS, reap_children};
 
 static COMPLETIONS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-static JOBS: OnceLock<Mutex<Vec<JobEntry>>> = OnceLock::new();
+static JOBS: OnceLock<Mutex<JobTable>> = OnceLock::new();
 
 #[derive(Helper, Hinter, Highlighter, Validator)]
 struct ShellHelper {
@@ -98,6 +98,7 @@ fn repl() -> Result<()> {
     };
     rl.set_helper(Some(shell_helper));
     loop {
+        reap_children();
         let readline = rl.readline("$ ");
         match readline {
             Ok(line) => {
@@ -150,6 +151,12 @@ fn get_completions() -> &'static Mutex<HashMap<String, String>> {
     COMPLETIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn get_jobs() -> &'static Mutex<Vec<JobEntry>> {
-    JOBS.get_or_init(|| Mutex::new(Vec::new()))
+fn get_job_table() -> &'static Mutex<JobTable> {
+    JOBS.get_or_init(|| {
+        Mutex::new(JobTable {
+            jobs: Vec::new(),
+            free_list: BTreeSet::new(),
+            next_id: 1,
+        })
+    })
 }
