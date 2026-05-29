@@ -337,11 +337,11 @@ fn list_jobs(stdout: &mut dyn Write) {
             JobStatus::Stopped => format!("{:<24}", "Stopped"),
         };
         let cmd = job.cmd.clone();
-        let mut out = format!("[{}]  {}{}", job_num, status, cmd);
+        let mut out = format!("[{}]  {}{} &", job_num, status, cmd);
         if i == jobs.len() - 1 {
-            out = format!("[{}]+  {}{}", job_num, status, cmd);
+            out = format!("[{}]+  {}{} &", job_num, status, cmd);
         } else if i == jobs.len() - 2 {
-            out = format!("[{}]-  {}{}", job_num, status, cmd);
+            out = format!("[{}]-  {}{} &", job_num, status, cmd);
         }
         writeln!(stdout, "{}", out).unwrap();
     }
