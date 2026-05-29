@@ -366,38 +366,46 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
 }
 
 fn list_jobs(stdout: &mut dyn Write) {
-    let job_table = get_job_table().lock().unwrap();
-    let jobs = &job_table.jobs;
-    for (i, job) in jobs.iter().enumerate() {
+    let mut to_remove: Vec<usize> = Vec::new();
+    let mut job_table = get_job_table().lock().unwrap();
+    let current = job_table.current_job_id;
+    let prev = job_table.prev_job_id;
+
+    for (i, job) in job_table.jobs.iter().enumerate() {
         let job_num = job.job_id;
         let status = match job.status {
             JobStatus::Running => format!("{:<24}", "Running"),
-            JobStatus::Done => format!("{:<24}", "Done"),
+            JobStatus::Done => {
+                to_remove.push(i);
+                format!("{:<24}", "Done")
+            }
             JobStatus::Stopped => format!("{:<24}", "Stopped"),
         };
         let cmd = &job.cmd;
-        let mut out = format!("[{}]  {}{}", job_num, status, cmd);
-        if Some(job.job_id) == job_table.current_job_id {
+        let mut out = format!("[{}]   {}{}", job_num, status, cmd);
+        if Some(job.job_id) == current {
             out = format!("[{}]+  {}{}", job_num, status, cmd);
-        } else if Some(job.job_id) == job_table.prev_job_id {
+        } else if Some(job.job_id) == prev {
             out = format!("[{}]-  {}{}", job_num, status, cmd);
         }
         writeln!(stdout, "{}", out).unwrap();
     }
+
+    for i in to_remove.iter().rev() {
+        let job = job_table.jobs.remove(*i);
+        job_table.free_job_id(job.job_id);
+    }
 }
 
 pub fn reap_children() {
-    let mut to_remove: Vec<usize> = Vec::new();
     let mut job_table = get_job_table().lock().unwrap();
-    for (i, job) in job_table.jobs.iter_mut().enumerate() {
+    for job in job_table.jobs.iter_mut() {
         match waitpid(Pid::from_raw(job.pid as i32), Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::Exited(_pid, _signal)) => {
                 job.status = JobStatus::Done;
-                to_remove.push(i);
             }
             Ok(WaitStatus::Signaled(_pid, _signal, _)) => {
                 job.status = JobStatus::Done;
-                to_remove.push(i);
             }
             Ok(WaitStatus::Stopped(_pid, _signal)) => {
                 job.status = JobStatus::Stopped;
@@ -406,16 +414,5 @@ pub fn reap_children() {
             Err(_) => {}
             _ => {}
         }
-    }
-    for i in to_remove.iter().rev() {
-        let job = job_table.jobs.remove(*i);
-        job_table.free_job_id(job.job_id);
-        let mut out = format!("[{}]  {:<24}{}", job.job_id, "Done", job.cmd);
-        if Some(job.job_id) == job_table.current_job_id {
-            out = format!("[{}]+  {:<24}{}", job.job_id, "Done", job.cmd);
-        } else if Some(job.job_id) == job_table.prev_job_id {
-            out = format!("[{}]-  {:<24}{}", job.job_id, "Done", job.cmd);
-        }
-        println!("{}", out);
     }
 }
