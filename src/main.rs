@@ -157,6 +157,8 @@ fn get_job_table() -> &'static Mutex<JobTable> {
             jobs: Vec::new(),
             free_list: BTreeSet::new(),
             next_id: 1,
+            current_job_id: None,
+            prev_job_id: None,
         })
     })
 }

@@ -48,6 +48,8 @@ pub struct JobTable {
     pub jobs: Vec<JobEntry>,
     pub free_list: BTreeSet<usize>,
     pub next_id: usize,
+    pub current_job_id: Option<usize>,
+    pub prev_job_id: Option<usize>,
 }
 
 pub struct JobEntry {
@@ -234,6 +236,8 @@ fn run_command(
             if is_background {
                 let mut job_table = get_job_table().lock().unwrap();
                 let job_id = job_table.allocate_job_id();
+                job_table.prev_job_id = job_table.current_job_id;
+                job_table.current_job_id = Some(job_id);
                 let pid = child.id();
                 let jobs = &mut job_table.jobs;
                 jobs.push(JobEntry {
@@ -373,9 +377,9 @@ fn list_jobs(stdout: &mut dyn Write) {
         };
         let cmd = &job.cmd;
         let mut out = format!("[{}]  {}{}", job_num, status, cmd);
-        if i == jobs.len() - 1 {
+        if i == job_table.current_job_id.unwrap() {
             out = format!("[{}]+  {}{}", job_num, status, cmd);
-        } else if i == jobs.len() - 2 {
+        } else if i == job_table.prev_job_id.unwrap() {
             out = format!("[{}]-  {}{}", job_num, status, cmd);
         }
         writeln!(stdout, "{}", out).unwrap();
@@ -406,7 +410,12 @@ pub fn reap_children() {
     for i in to_remove.iter().rev() {
         let job = job_table.jobs.remove(*i);
         job_table.free_job_id(job.job_id);
-        let out = format!("[{}]+ {:<24}{}", job.job_id, "Done", job.cmd);
+        let mut out = format!("[{}]  {}{}", job.job_id, "Done", job.cmd);
+        if *i == job_table.current_job_id.unwrap() {
+            out = format!("[{}]+  {}{}", job.job_id, "Done", job.cmd);
+        } else if *i == job_table.prev_job_id.unwrap() {
+            out = format!("[{}]-  {}{}", job.job_id, "Done", job.cmd);
+        }
         println!("{}", out);
     }
 }
