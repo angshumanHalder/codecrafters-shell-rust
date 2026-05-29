@@ -113,12 +113,7 @@ fn handle_command(input: Vec<String>) {
             run_builtin_command(cmd, &args, &mut *stdout, &mut *stderr);
         }
         CommandKind::External(path) => {
-            let full_cmd = if is_background {
-                format!("{} &", input.join(" "))
-            } else {
-                input.join(" ")
-            };
-            run_command(path, &args, redirections, is_background, full_cmd)
+            run_command(path, &args, redirections, is_background, input.join(" "))
         }
         CommandKind::NotFound => println!("{}: not found", cmd),
     }
@@ -378,15 +373,19 @@ fn list_jobs(stdout: &mut dyn Write) {
 
     for (i, job) in job_table.jobs.iter().enumerate() {
         let job_num = job.job_id;
-        let status = match job.status {
-            JobStatus::Running => format!("{:<24}", "Running"),
+        let (status, show_ampersand) = match job.status {
+            JobStatus::Running => (format!("{:<24}", "Running"), true),
             JobStatus::Done => {
                 to_remove.push(i);
-                format!("{:<24}", "Done")
+                (format!("{:<24}", "Done"), false)
             }
-            JobStatus::Stopped => format!("{:<24}", "Stopped"),
+            JobStatus::Stopped => (format!("{:<24}", "Stopped"), true),
         };
-        let cmd = &job.cmd;
+        let cmd = if show_ampersand {
+            format!("{} &", job.cmd)
+        } else {
+            job.cmd.clone()
+        };
         let mut out = format!("[{}]   {}{}", job_num, status, cmd);
         if Some(job.job_id) == current {
             out = format!("[{}]+  {}{}", job_num, status, cmd);
