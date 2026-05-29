@@ -275,7 +275,10 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             stdout,
             stderr,
         ),
-        "jobs" => list_jobs(stdout),
+        "jobs" => {
+            reap_children();
+            list_jobs(stdout)
+        }
         _ => writeln!(stderr, "{}: not found", cmd).unwrap(),
     }
 }
