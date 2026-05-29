@@ -98,7 +98,7 @@ fn repl() -> Result<()> {
     };
     rl.set_helper(Some(shell_helper));
     loop {
-        reap_children();
+        reap_children(true);
         let readline = rl.readline("$ ");
         match readline {
             Ok(line) => {

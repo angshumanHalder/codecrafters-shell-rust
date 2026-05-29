@@ -280,7 +280,7 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             stderr,
         ),
         "jobs" => {
-            reap_children();
+            reap_children(false);
             list_jobs(stdout)
         }
         _ => writeln!(stderr, "{}: not found", cmd).unwrap(),
@@ -415,22 +415,48 @@ fn list_jobs(stdout: &mut dyn Write) {
         .max();
 }
 
-pub fn reap_children() {
+pub fn reap_children(notify: bool) {
     let mut job_table = get_job_table().lock().unwrap();
     for job in job_table.jobs.iter_mut() {
         match waitpid(Pid::from_raw(job.pid as i32), Some(WaitPidFlag::WNOHANG)) {
-            Ok(WaitStatus::Exited(_pid, _signal)) => {
-                job.status = JobStatus::Done;
-            }
-            Ok(WaitStatus::Signaled(_pid, _signal, _)) => {
-                job.status = JobStatus::Done;
-            }
-            Ok(WaitStatus::Stopped(_pid, _signal)) => {
-                job.status = JobStatus::Stopped;
-            }
-            Ok(WaitStatus::StillAlive) => {}
-            Err(_) => {}
+            Ok(WaitStatus::Exited(_, _)) => job.status = JobStatus::Done,
+            Ok(WaitStatus::Signaled(_, _, _)) => job.status = JobStatus::Done,
+            Ok(WaitStatus::Stopped(_, _)) => job.status = JobStatus::Stopped,
             _ => {}
         }
+    }
+    if notify {
+        let current = job_table.current_job_id;
+        let prev = job_table.prev_job_id;
+        let mut to_remove: Vec<usize> = Vec::new();
+        for (i, job) in job_table.jobs.iter().enumerate() {
+            if matches!(job.status, JobStatus::Done) {
+                let marker = if Some(job.job_id) == current {
+                    "+"
+                } else if Some(job.job_id) == prev {
+                    "-"
+                } else {
+                    " "
+                };
+                println!("[{}]{}  {:<24}{}", job.job_id, marker, "Done", job.cmd);
+                to_remove.push(i);
+            }
+        }
+        let mut current_removed = false;
+        for i in to_remove.iter().rev() {
+            let job = job_table.jobs.remove(*i);
+            if Some(job.job_id) == job_table.current_job_id {
+                current_removed = true;
+            }
+            job_table.free_job_id(job.job_id);
+        }
+        if current_removed {
+            job_table.current_job_id = job_table.prev_job_id;
+        }
+        let current = job_table.current_job_id;
+        job_table.prev_job_id = job_table.jobs.iter()
+            .filter(|j| Some(j.job_id) != current)
+            .map(|j| j.job_id)
+            .max();
     }
 }
