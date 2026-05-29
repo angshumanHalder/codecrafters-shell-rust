@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use std::process;
 use std::process::exit;
 
+use crate::JOBS;
 use crate::get_completions;
+use crate::get_jobs;
 
 pub const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "complete", "jobs"];
 
@@ -37,6 +39,18 @@ struct Redirection {
     target: String,
 }
 
+pub struct JobEntry {
+    pid: u32,
+    status: JobStatus,
+    cmd: String,
+}
+
+enum JobStatus {
+    Running,
+    Stopped,
+    Done,
+}
+
 pub fn process_command(input: &str) {
     let result = process_input(input);
     match result {
@@ -47,6 +61,12 @@ pub fn process_command(input: &str) {
 }
 
 fn handle_command(input: Vec<String>) {
+    let is_background = input.last().map(|s| s == "&").unwrap_or(false);
+    let input = if is_background {
+        &input[..input.len() - 1]
+    } else {
+        &input[..]
+    };
     let cmd = &input[0];
     let all_args: Vec<String> = input.get(1..).unwrap_or_default().to_vec();
     let (args, redirections) = parse_args(all_args);
@@ -62,7 +82,9 @@ fn handle_command(input: Vec<String>) {
             };
             run_builtin_command(cmd, &args, &mut *stdout, &mut *stderr);
         }
-        CommandKind::External(path) => run_command(path, &args, redirections),
+        CommandKind::External(path) => {
+            run_command(path, &args, redirections, is_background, input.join(" "))
+        }
         CommandKind::NotFound => println!("{}: not found", cmd),
     }
 }
@@ -156,7 +178,13 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
         .map(|e| e.path())
 }
 
-fn run_command(cmd: PathBuf, args: &[String], redirections: Vec<Redirection>) {
+fn run_command(
+    cmd: PathBuf,
+    args: &[String],
+    redirections: Vec<Redirection>,
+    is_background: bool,
+    full_cmd: String,
+) {
     let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let stdout_stdio = match redirections.iter().find(|r| r.fd == 1) {
         Some(r) => process::Stdio::from(open_redirect_file(r)),
@@ -166,16 +194,29 @@ fn run_command(cmd: PathBuf, args: &[String], redirections: Vec<Redirection>) {
         Some(r) => process::Stdio::from(open_redirect_file(r)),
         None => process::Stdio::inherit(),
     };
-    let status = process::Command::new(&cmd)
+    let child = process::Command::new(&cmd)
         .arg0(cmd_name)
         .args(args)
         .stdout(stdout_stdio)
         .stderr(stderr_stdio)
-        .spawn()
-        .and_then(|mut child| child.wait());
-
-    if let Err(e) = status {
-        eprintln!("Failed to execute command: {}", e);
+        .spawn();
+    match child {
+        Err(e) => eprintln!("Failed to execute command: {}", e),
+        Ok(mut child) => {
+            if is_background {
+                let mut jobs = get_jobs().lock().unwrap();
+                let job_num = jobs.len() + 1;
+                let pid = child.id();
+                jobs.push(JobEntry {
+                    pid,
+                    status: JobStatus::Running,
+                    cmd: full_cmd,
+                });
+                println!("[{}] {}", job_num, pid);
+            } else {
+                let _ = child.wait();
+            }
+        }
     }
 }
 

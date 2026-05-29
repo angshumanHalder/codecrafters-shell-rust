@@ -11,3 +11,4 @@ bytes = "1.3.0"                                  # helps manage buffers
 rustyline = "18.0.0"
 rustyline-derive = "0.12.0"
 thiserror = "1.0.38"                             # error handling
+nix = { version = "0.31", features = ["signal", "process"] }

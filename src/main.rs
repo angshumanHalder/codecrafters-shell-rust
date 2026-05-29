@@ -13,8 +13,10 @@ use rustyline::{Config, Editor, Result};
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
 use crate::commands::BUILTINS;
+use crate::commands::JobEntry;
 
 static COMPLETIONS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static JOBS: OnceLock<Mutex<Vec<JobEntry>>> = OnceLock::new();
 
 #[derive(Helper, Hinter, Highlighter, Validator)]
 struct ShellHelper {
@@ -146,4 +148,8 @@ fn is_break_char(c: char) -> bool {
 
 fn get_completions() -> &'static Mutex<HashMap<String, String>> {
     COMPLETIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_jobs() -> &'static Mutex<Vec<JobEntry>> {
+    JOBS.get_or_init(|| Mutex::new(Vec::new()))
 }
