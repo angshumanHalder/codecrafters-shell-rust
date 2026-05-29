@@ -395,9 +395,16 @@ fn list_jobs(stdout: &mut dyn Write) {
         writeln!(stdout, "{}", out).unwrap();
     }
 
+    let mut current_removed = false;
     for i in to_remove.iter().rev() {
         let job = job_table.jobs.remove(*i);
+        if Some(job.job_id) == job_table.current_job_id {
+            current_removed = true;
+        }
         job_table.free_job_id(job.job_id);
+    }
+    if current_removed {
+        job_table.current_job_id = job_table.prev_job_id;
     }
     let current = job_table.current_job_id;
     job_table.prev_job_id = job_table
