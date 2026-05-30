@@ -136,7 +136,6 @@ fn repl() -> Result<()> {
             }
         }
     }
-    let _ = rl.append_history(&history_path);
     Ok(())
 }
 
