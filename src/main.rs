@@ -105,7 +105,7 @@ fn repl() -> Result<()> {
         p.push(".shell_history");
         p.into_os_string()
     });
-    let mut history_append_offset: usize = 0;
+    let mut history_append_offset: usize;
     let _ = rl.load_history(&history_path);
     history_append_offset = rl.history().len();
     loop {
