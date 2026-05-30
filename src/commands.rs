@@ -3,6 +3,7 @@ use std::env;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -13,6 +14,7 @@ use nix::sys::wait::WaitPidFlag;
 use nix::sys::wait::WaitStatus;
 use nix::sys::wait::waitpid;
 use nix::unistd::Pid;
+use nix::unistd::pipe;
 
 use crate::get_completions;
 use crate::get_job_table;
@@ -79,6 +81,44 @@ impl JobTable {
     fn free_job_id(&mut self, id: usize) {
         self.free_list.insert(id);
     }
+
+    fn job_marker(&self, job_id: usize) -> &'static str {
+        if Some(job_id) == self.current_job_id {
+            "+"
+        } else if Some(job_id) == self.prev_job_id {
+            "-"
+        } else {
+            " "
+        }
+    }
+
+    fn remove_done_jobs(&mut self) {
+        let done_indices: Vec<usize> = self
+            .jobs
+            .iter()
+            .enumerate()
+            .filter(|(_, j)| matches!(j.status, JobStatus::Done))
+            .map(|(i, _)| i)
+            .collect();
+        let mut current_removed = false;
+        for i in done_indices.iter().rev() {
+            let job = self.jobs.remove(*i);
+            if Some(job.job_id) == self.current_job_id {
+                current_removed = true;
+            }
+            self.free_job_id(job.job_id);
+        }
+        if current_removed {
+            self.current_job_id = self.prev_job_id;
+        }
+        let current = self.current_job_id;
+        self.prev_job_id = self
+            .jobs
+            .iter()
+            .filter(|j| Some(j.job_id) != current)
+            .map(|j| j.job_id)
+            .max();
+    }
 }
 
 pub fn process_command(input: &str) {
@@ -90,7 +130,15 @@ pub fn process_command(input: &str) {
     }
 }
 
-fn handle_command(input: Vec<String>) {
+fn handle_command(segments: Vec<Vec<String>>) {
+    if segments.len() > 1 {
+        handle_pipelines(segments);
+    } else {
+        handle_single_cmd(&segments[0]);
+    }
+}
+
+fn handle_single_cmd(input: &Vec<String>) {
     let is_background = input.last().map(|s| s == "&").unwrap_or(false);
     let input = if is_background {
         &input[..input.len() - 1]
@@ -119,7 +167,96 @@ fn handle_command(input: Vec<String>) {
     }
 }
 
-fn process_input(input: &str) -> Result<Vec<String>, ParseError> {
+fn handle_pipelines(mut segments: Vec<Vec<String>>) {
+    let is_background = segments
+        .last()
+        .and_then(|inner| inner.last())
+        .is_some_and(|s| s == "&");
+    if segments.iter().any(|s| s.is_empty()) {
+        eprintln!("syntax error: empty command in pipeline");
+        return;
+    }
+    if is_background {
+        if let Some(inner) = segments.last_mut() {
+            inner.pop();
+        }
+    }
+    let mut pipes: Vec<(Option<OwnedFd>, Option<OwnedFd>)> = Vec::new();
+    let mut children: Vec<process::Child> = Vec::new();
+    for _ in 0..segments.len() - 1 {
+        let (r, w) = nix::unistd::pipe().unwrap();
+        pipes.push((Some(r), Some(w)));
+    }
+    for (i, segment) in segments.iter().enumerate() {
+        let cmd = &segment[0];
+        let all_args: Vec<String> = segment.get(1..).unwrap_or_default().to_vec();
+        let (args, redirections) = parse_args(all_args);
+        match resolve_command(cmd) {
+            CommandKind::Builtin => {
+                if i > 0 {
+                    let _ = pipes[i - 1].0.take();
+                }
+                let mut buf: Vec<u8> = Vec::new();
+                run_builtin_command(cmd, &args, &mut buf, &mut io::stderr());
+
+                if i < segments.len() - 1 {
+                    if let Some(write_fd) = pipes[i].1.take() {
+                        let mut f = std::fs::File::from(write_fd);
+                        let _ = f.write_all(&buf);
+                    }
+                } else {
+                    let _ = io::stdout().write_all(&buf);
+                }
+            }
+            CommandKind::External(path) => {
+                let stdin = if i == 0 {
+                    None
+                } else {
+                    pipes[i - 1].0.take().map(process::Stdio::from)
+                };
+                let stdout = if i == segments.len() - 1 {
+                    None
+                } else {
+                    pipes[i].1.take().map(process::Stdio::from)
+                };
+                if let Some(child) = spawn_command(path, &args, &redirections, stdin, stdout) {
+                    children.push(child);
+                };
+            }
+            CommandKind::NotFound => println!("{}: not found", cmd),
+        }
+    }
+
+    drop(pipes);
+    if is_background {
+        if let Some(last_child) = children.last_mut() {
+            let mut job_table = get_job_table().lock().unwrap();
+            let job_id = job_table.allocate_job_id();
+            let pid = last_child.id();
+            let full_cmd = segments
+                .iter()
+                .map(|s| s.join(" "))
+                .collect::<Vec<_>>()
+                .join(" | ");
+            job_table.jobs.push(JobEntry {
+                job_id,
+                pid,
+                status: JobStatus::Running,
+                cmd: full_cmd,
+            });
+            job_table.prev_job_id = job_table.current_job_id;
+            job_table.current_job_id = Some(job_id);
+            println!("[{}] {}", job_id, pid);
+        }
+    } else {
+        for mut child in children {
+            let _ = child.wait();
+        }
+    }
+}
+
+fn process_input(input: &str) -> Result<Vec<Vec<String>>, ParseError> {
+    let mut segments: Vec<Vec<String>> = Vec::new();
     let mut args = Vec::new();
     let mut curr_token = String::new();
     let mut state = State::Default;
@@ -139,6 +276,13 @@ fn process_input(input: &str) -> Result<Vec<String>, ParseError> {
                     Some(c) => curr_token.push(c),
                     None => continue,
                 },
+                '|' => {
+                    if !curr_token.is_empty() {
+                        args.push(std::mem::take(&mut curr_token));
+                    }
+                    segments.push(args);
+                    args = Vec::new();
+                }
                 _ => curr_token.push(c),
             },
             State::InSingleQuote => match c {
@@ -167,7 +311,10 @@ fn process_input(input: &str) -> Result<Vec<String>, ParseError> {
     match state {
         State::InSingleQuote => Err(ParseError::UnclosedSingleQuote),
         State::InDoubleQuote => Err(ParseError::UnclosedDoubleQuote),
-        State::Default => Ok(args),
+        State::Default => {
+            segments.push(args);
+            Ok(segments)
+        }
     }
 }
 
@@ -208,6 +355,40 @@ fn find_command(cmd: &str) -> Option<PathBuf> {
         .map(|e| e.path())
 }
 
+fn spawn_command(
+    cmd: PathBuf,
+    args: &[String],
+    redirections: &[Redirection],
+    stdin_override: Option<process::Stdio>,
+    stdout_override: Option<process::Stdio>,
+) -> Option<process::Child> {
+    let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let stdin_stdio = stdin_override.unwrap_or(process::Stdio::inherit());
+    let stdout_stdio =
+        stdout_override.unwrap_or_else(|| match redirections.iter().find(|r| r.fd == 1) {
+            Some(r) => process::Stdio::from(open_redirect_file(r)),
+            None => process::Stdio::inherit(),
+        });
+    let stderr_stdio = match redirections.iter().find(|r| r.fd == 2) {
+        Some(r) => process::Stdio::from(open_redirect_file(r)),
+        None => process::Stdio::inherit(),
+    };
+    match process::Command::new(&cmd)
+        .arg0(cmd_name)
+        .args(args)
+        .stdin(stdin_stdio)
+        .stdout(stdout_stdio)
+        .stderr(stderr_stdio)
+        .spawn()
+    {
+        Err(e) => {
+            eprintln!("Failed to execute command: {}", e);
+            None
+        }
+        Ok(child) => Some(child),
+    }
+}
+
 fn run_command(
     cmd: PathBuf,
     args: &[String],
@@ -215,41 +396,22 @@ fn run_command(
     is_background: bool,
     full_cmd: String,
 ) {
-    let cmd_name = cmd.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let stdout_stdio = match redirections.iter().find(|r| r.fd == 1) {
-        Some(r) => process::Stdio::from(open_redirect_file(r)),
-        None => process::Stdio::inherit(),
-    };
-    let stderr_stdio = match redirections.iter().find(|r| r.fd == 2) {
-        Some(r) => process::Stdio::from(open_redirect_file(r)),
-        None => process::Stdio::inherit(),
-    };
-    let child = process::Command::new(&cmd)
-        .arg0(cmd_name)
-        .args(args)
-        .stdout(stdout_stdio)
-        .stderr(stderr_stdio)
-        .spawn();
-    match child {
-        Err(e) => eprintln!("Failed to execute command: {}", e),
-        Ok(mut child) => {
-            if is_background {
-                let mut job_table = get_job_table().lock().unwrap();
-                let job_id = job_table.allocate_job_id();
-                let pid = child.id();
-                let jobs = &mut job_table.jobs;
-                jobs.push(JobEntry {
-                    job_id,
-                    pid,
-                    status: JobStatus::Running,
-                    cmd: full_cmd,
-                });
-                job_table.prev_job_id = job_table.current_job_id;
-                job_table.current_job_id = Some(job_id);
-                println!("[{}] {}", job_id, pid);
-            } else {
-                let _ = child.wait();
-            }
+    if let Some(mut child) = spawn_command(cmd, args, &redirections, None, None) {
+        if is_background {
+            let mut job_table = get_job_table().lock().unwrap();
+            let job_id = job_table.allocate_job_id();
+            let pid = child.id();
+            job_table.jobs.push(JobEntry {
+                job_id,
+                pid,
+                status: JobStatus::Running,
+                cmd: full_cmd,
+            });
+            job_table.prev_job_id = job_table.current_job_id;
+            job_table.current_job_id = Some(job_id);
+            println!("[{}] {}", job_id, pid);
+        } else {
+            let _ = child.wait();
         }
     }
 }
@@ -329,6 +491,10 @@ fn open_redirect_file(r: &Redirection) -> std::fs::File {
 }
 
 fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) {
+    if args.is_empty() {
+        writeln!(stderr, "complete: usage: complete -C <script> <command>").unwrap();
+        return;
+    }
     match args[0].as_str() {
         "-C" => {
             if args.len() < 3 {
@@ -366,19 +532,13 @@ fn handle_complete(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Wri
 }
 
 fn list_jobs(stdout: &mut dyn Write) {
-    let mut to_remove: Vec<usize> = Vec::new();
     let mut job_table = get_job_table().lock().unwrap();
-    let current = job_table.current_job_id;
-    let prev = job_table.prev_job_id;
 
-    for (i, job) in job_table.jobs.iter().enumerate() {
-        let job_num = job.job_id;
+    for job in job_table.jobs.iter() {
+        let marker = job_table.job_marker(job.job_id);
         let (status, show_ampersand) = match job.status {
             JobStatus::Running => (format!("{:<24}", "Running"), true),
-            JobStatus::Done => {
-                to_remove.push(i);
-                (format!("{:<24}", "Done"), false)
-            }
+            JobStatus::Done => (format!("{:<24}", "Done"), false),
             JobStatus::Stopped => (format!("{:<24}", "Stopped"), true),
         };
         let cmd = if show_ampersand {
@@ -386,33 +546,15 @@ fn list_jobs(stdout: &mut dyn Write) {
         } else {
             job.cmd.clone()
         };
-        let mut out = format!("[{}]   {}{}", job_num, status, cmd);
-        if Some(job.job_id) == current {
-            out = format!("[{}]+  {}{}", job_num, status, cmd);
-        } else if Some(job.job_id) == prev {
-            out = format!("[{}]-  {}{}", job_num, status, cmd);
-        }
+        let out = if marker == " " {
+            format!("[{}]   {}{}", job.job_id, status, cmd)
+        } else {
+            format!("[{}]{}  {}{}", job.job_id, marker, status, cmd)
+        };
         writeln!(stdout, "{}", out).unwrap();
     }
 
-    let mut current_removed = false;
-    for i in to_remove.iter().rev() {
-        let job = job_table.jobs.remove(*i);
-        if Some(job.job_id) == job_table.current_job_id {
-            current_removed = true;
-        }
-        job_table.free_job_id(job.job_id);
-    }
-    if current_removed {
-        job_table.current_job_id = job_table.prev_job_id;
-    }
-    let current = job_table.current_job_id;
-    job_table.prev_job_id = job_table
-        .jobs
-        .iter()
-        .filter(|j| Some(j.job_id) != current)
-        .map(|j| j.job_id)
-        .max();
+    job_table.remove_done_jobs();
 }
 
 pub fn reap_children(notify: bool) {
@@ -426,37 +568,14 @@ pub fn reap_children(notify: bool) {
         }
     }
     if notify {
-        let current = job_table.current_job_id;
-        let prev = job_table.prev_job_id;
-        let mut to_remove: Vec<usize> = Vec::new();
-        for (i, job) in job_table.jobs.iter().enumerate() {
-            if matches!(job.status, JobStatus::Done) {
-                let marker = if Some(job.job_id) == current {
-                    "+"
-                } else if Some(job.job_id) == prev {
-                    "-"
-                } else {
-                    " "
-                };
-                println!("[{}]{}  {:<24}{}", job.job_id, marker, "Done", job.cmd);
-                to_remove.push(i);
-            }
+        for job in job_table
+            .jobs
+            .iter()
+            .filter(|j| matches!(j.status, JobStatus::Done))
+        {
+            let marker = job_table.job_marker(job.job_id);
+            println!("[{}]{}  {:<24}{}", job.job_id, marker, "Done", job.cmd);
         }
-        let mut current_removed = false;
-        for i in to_remove.iter().rev() {
-            let job = job_table.jobs.remove(*i);
-            if Some(job.job_id) == job_table.current_job_id {
-                current_removed = true;
-            }
-            job_table.free_job_id(job.job_id);
-        }
-        if current_removed {
-            job_table.current_job_id = job_table.prev_job_id;
-        }
-        let current = job_table.current_job_id;
-        job_table.prev_job_id = job_table.jobs.iter()
-            .filter(|j| Some(j.job_id) != current)
-            .map(|j| j.job_id)
-            .max();
+        job_table.remove_done_jobs();
     }
 }
