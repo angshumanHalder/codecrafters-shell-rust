@@ -18,6 +18,7 @@ use crate::commands::{BUILTINS, reap_children};
 
 static COMPLETIONS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static JOBS: OnceLock<Mutex<JobTable>> = OnceLock::new();
+static VARIABLES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 #[derive(Helper, Hinter, Highlighter, Validator)]
 struct ShellHelper {
@@ -182,6 +183,10 @@ fn is_break_char(c: char) -> bool {
 
 fn get_completions() -> &'static Mutex<HashMap<String, String>> {
     COMPLETIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_variables() -> &'static Mutex<HashMap<String, String>> {
+    VARIABLES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn get_job_table() -> &'static Mutex<JobTable> {

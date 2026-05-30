@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
@@ -17,9 +18,10 @@ use nix::unistd::Pid;
 
 use crate::get_completions;
 use crate::get_job_table;
+use crate::get_variables;
 
 pub const BUILTINS: &[&str] = &[
-    "exit", "echo", "pwd", "type", "cd", "complete", "jobs", "history",
+    "exit", "echo", "pwd", "type", "cd", "complete", "jobs", "history", "declare",
 ];
 
 enum CommandKind {
@@ -256,6 +258,44 @@ fn handle_pipelines(mut segments: Vec<Vec<String>>) {
     }
 }
 
+fn expand_var<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> String {
+    match chars.peek() {
+        Some(&'{') => {
+            chars.next();
+            let mut name = String::new();
+            for c in chars.by_ref() {
+                if c == '}' {
+                    break;
+                }
+                name.push(c);
+            }
+            get_variables()
+                .lock()
+                .unwrap()
+                .get(&name)
+                .cloned()
+                .unwrap_or_default()
+        }
+        Some(&c) if c.is_ascii_alphanumeric() || c == '_' => {
+            let mut name = String::new();
+            while let Some(&c) = chars.peek() {
+                if !c.is_ascii_alphanumeric() && c != '_' {
+                    break;
+                }
+                name.push(c);
+                chars.next();
+            }
+            get_variables()
+                .lock()
+                .unwrap()
+                .get(&name)
+                .cloned()
+                .unwrap_or_default()
+        }
+        _ => String::from("$"),
+    }
+}
+
 fn process_input(input: &str) -> Result<Vec<Vec<String>>, ParseError> {
     let mut segments: Vec<Vec<String>> = Vec::new();
     let mut args = Vec::new();
@@ -284,6 +324,7 @@ fn process_input(input: &str) -> Result<Vec<Vec<String>>, ParseError> {
                     segments.push(args);
                     args = Vec::new();
                 }
+                '$' => curr_token.push_str(&expand_var(&mut chars)),
                 _ => curr_token.push(c),
             },
             State::InSingleQuote => match c {
@@ -302,6 +343,7 @@ fn process_input(input: &str) -> Result<Vec<Vec<String>>, ParseError> {
                     },
                     None => continue,
                 },
+                '$' => curr_token.push_str(&expand_var(&mut chars)),
                 _ => curr_token.push(c),
             },
         }
@@ -446,6 +488,7 @@ fn run_builtin_command(cmd: &str, args: &[String], stdout: &mut dyn Write, stder
             reap_children(false);
             list_jobs(stdout)
         }
+        "declare" => handle_declare(args, stdout, stderr),
         _ => writeln!(stderr, "{}: not found", cmd).unwrap(),
     }
 }
@@ -556,6 +599,57 @@ fn list_jobs(stdout: &mut dyn Write) {
     }
 
     job_table.remove_done_jobs();
+}
+
+fn handle_declare(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) {
+    let mut flags = HashSet::new();
+    let mut operand = None;
+    for arg in args {
+        if arg.starts_with('-') && operand.is_none() {
+            for ch in arg[1..].chars() {
+                flags.insert(ch);
+            }
+        } else {
+            operand = Some(arg.as_str());
+            break;
+        }
+    }
+    match operand {
+        Some(op) => {
+            if flags.is_empty() {
+                let declartion: Vec<&str> = op.splitn(2, "=").collect();
+                if declartion.len() < 2 {
+                    writeln!(stderr, "declare: no value or identifier present").unwrap();
+                    return;
+                }
+                if !validate_var_name(declartion[0]) {
+                    writeln!(stderr, "declare: '{}': not a valid identifier", op).unwrap();
+                    return;
+                }
+                get_variables()
+                    .lock()
+                    .unwrap()
+                    .insert(String::from(declartion[0]), String::from(declartion[1]));
+            } else if flags.contains(&'p') {
+                if let Some(value) = get_variables().lock().unwrap().get(op) {
+                    writeln!(stdout, "declare -- {}=\"{}\"", op, value).unwrap();
+                } else {
+                    writeln!(stderr, "declare: {}: not found", op).unwrap();
+                }
+            }
+        }
+        None => {}
+    }
+}
+
+fn validate_var_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+            chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+        _ => false,
+    }
 }
 
 pub fn reap_children(notify: bool) {
