@@ -113,7 +113,7 @@ fn repl() -> Result<()> {
                 let trimmed = line.trim();
                 let _ = rl.add_history_entry(trimmed);
                 if trimmed.starts_with("history") {
-                    handle_history(&rl, trimmed);
+                    handle_history(&mut rl, trimmed);
                 } else {
                     commands::process_command(&line.trim());
                 }
@@ -178,18 +178,36 @@ fn get_job_table() -> &'static Mutex<JobTable> {
     })
 }
 
-fn handle_history(rl: &Editor<ShellHelper, rustyline::history::DefaultHistory>, input: &str) {
+fn handle_history(rl: &mut Editor<ShellHelper, rustyline::history::DefaultHistory>, input: &str) {
     use rustyline::history::SearchDirection;
     let args: Vec<&str> = input.split_whitespace().collect();
-    let total = rl.history().len();
-    let limit = args
-        .get(1)
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(total);
-    let start = total.saturating_sub(limit);
-    for i in start..total {
-        if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
-            println!("{:5}  {}", i + 1, result.entry);
+    match args.get(1).copied() {
+        Some("-r") => {
+            if let Some(path) = args.get(2) {
+                let _ = rl.load_history(path);
+            } else {
+                eprintln!("history: -r: missing file operand");
+            }
+        }
+        Some("-w") => {
+            if let Some(path) = args.get(2) {
+                let _ = rl.append_history(path);
+            } else {
+                eprintln!("history: -w: missing file operand");
+            }
+        }
+        _ => {
+            let total = rl.history().len();
+            let limit = args
+                .get(1)
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(total);
+            let start = total.saturating_sub(limit);
+            for i in start..total {
+                if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
+                    println!("{:5}  {}", i + 1, result.entry);
+                }
+            }
         }
     }
 }
