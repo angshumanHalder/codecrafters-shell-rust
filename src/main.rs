@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use rustyline::completion::{Completer, FilenameCompleter, Pair, extract_word};
+use rustyline::history::History;
 use rustyline::{Config, Editor, Result};
 use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
 
@@ -97,18 +98,32 @@ fn repl() -> Result<()> {
         file_completer: FilenameCompleter::new(),
     };
     rl.set_helper(Some(shell_helper));
+    let history_path = std::env::var_os("HISTFILE").unwrap_or_else(|| {
+        let home = std::env::var_os("HOME").unwrap_or_default();
+        let mut p = std::path::PathBuf::from(home);
+        p.push(".shell_history");
+        p.into_os_string()
+    });
+    let _ = rl.load_history(&history_path);
     loop {
         reap_children(true);
         let readline = rl.readline("$ ");
         match readline {
             Ok(line) => {
-                commands::process_command(&line.trim());
+                let trimmed = line.trim();
+                let _ = rl.add_history_entry(trimmed);
+                if trimmed.starts_with("history") {
+                    handle_history(&rl, trimmed);
+                } else {
+                    commands::process_command(&line.trim());
+                }
             }
             Err(_) => {
                 break;
             }
         }
     }
+    let _ = rl.append_history(&history_path);
     Ok(())
 }
 
@@ -161,4 +176,20 @@ fn get_job_table() -> &'static Mutex<JobTable> {
             prev_job_id: None,
         })
     })
+}
+
+fn handle_history(rl: &Editor<ShellHelper, rustyline::history::DefaultHistory>, input: &str) {
+    use rustyline::history::SearchDirection;
+    let args: Vec<&str> = input.split_whitespace().collect();
+    let total = rl.history().len();
+    let limit = args
+        .get(1)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(total);
+    let start = total.saturating_sub(limit);
+    for i in start..total {
+        if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
+            println!("{:5}  {}", i + 1, result.entry);
+        }
+    }
 }

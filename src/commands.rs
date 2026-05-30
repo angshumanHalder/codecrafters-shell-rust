@@ -14,12 +14,13 @@ use nix::sys::wait::WaitPidFlag;
 use nix::sys::wait::WaitStatus;
 use nix::sys::wait::waitpid;
 use nix::unistd::Pid;
-use nix::unistd::pipe;
 
 use crate::get_completions;
 use crate::get_job_table;
 
-pub const BUILTINS: &[&str] = &["exit", "echo", "pwd", "type", "cd", "complete", "jobs"];
+pub const BUILTINS: &[&str] = &[
+    "exit", "echo", "pwd", "type", "cd", "complete", "jobs", "history",
+];
 
 enum CommandKind {
     Builtin,
