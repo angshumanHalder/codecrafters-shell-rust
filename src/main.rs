@@ -124,6 +124,18 @@ fn repl() -> Result<()> {
             }
         }
     }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&history_path)
+    {
+        use rustyline::history::SearchDirection;
+        for i in 0..rl.history().len() {
+            if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
+                let _ = writeln!(file, "{}", result.entry);
+            }
+        }
+    }
     let _ = rl.append_history(&history_path);
     Ok(())
 }
@@ -185,14 +197,26 @@ fn handle_history(rl: &mut Editor<ShellHelper, rustyline::history::DefaultHistor
     match args.get(1).copied() {
         Some("-r") => {
             if let Some(path) = args.get(2) {
-                let _ = rl.load_history(path);
+                if let Ok(contents) = std::fs::read_to_string(path) {
+                    for line in contents.lines() {
+                        if !line.is_empty() {
+                            let _ = rl.add_history_entry(line);
+                        }
+                    }
+                }
             } else {
                 eprintln!("history: -r: missing file operand");
             }
         }
         Some("-w") => {
             if let Some(path) = args.get(2) {
-                let _ = rl.append_history(path);
+                if let Ok(mut file) = std::fs::File::create(path) {
+                    for i in 0..rl.history().len() {
+                        if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
+                            let _ = writeln!(file, "{}", result.entry);
+                        }
+                    }
+                }
             } else {
                 eprintln!("history: -w: missing file operand");
             }
