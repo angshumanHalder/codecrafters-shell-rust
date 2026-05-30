@@ -105,7 +105,9 @@ fn repl() -> Result<()> {
         p.push(".shell_history");
         p.into_os_string()
     });
+    let mut history_append_offset: usize = 0;
     let _ = rl.load_history(&history_path);
+    history_append_offset = rl.history().len();
     loop {
         reap_children(true);
         let readline = rl.readline("$ ");
@@ -114,7 +116,7 @@ fn repl() -> Result<()> {
                 let trimmed = line.trim();
                 let _ = rl.add_history_entry(trimmed);
                 if trimmed.starts_with("history") {
-                    handle_history(&mut rl, trimmed);
+                    handle_history(&mut rl, trimmed, &mut history_append_offset);
                 } else {
                     commands::process_command(&line.trim());
                 }
@@ -190,7 +192,11 @@ fn get_job_table() -> &'static Mutex<JobTable> {
     })
 }
 
-fn handle_history(rl: &mut Editor<ShellHelper, rustyline::history::DefaultHistory>, input: &str) {
+fn handle_history(
+    rl: &mut Editor<ShellHelper, rustyline::history::DefaultHistory>,
+    input: &str,
+    append_offset: &mut usize,
+) {
     use rustyline::history::SearchDirection;
     let args: Vec<&str> = input.split_whitespace().collect();
     match args.get(1).copied() {
@@ -203,17 +209,14 @@ fn handle_history(rl: &mut Editor<ShellHelper, rustyline::history::DefaultHistor
                         }
                     }
                 }
+                *append_offset = rl.history().len();
             } else {
                 eprintln!("history: -r: missing file operand");
             }
         }
-        Some("-w") | Some("-a") => {
+        Some("-w") => {
             if let Some(path) = args.get(2) {
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                {
+                if let Ok(mut file) = std::fs::File::create(path) {
                     for i in 0..rl.history().len() {
                         if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
                             let _ = writeln!(file, "{}", result.entry);
@@ -222,6 +225,25 @@ fn handle_history(rl: &mut Editor<ShellHelper, rustyline::history::DefaultHistor
                 }
             } else {
                 eprintln!("history: -w: missing file operand");
+            }
+        }
+        Some("a") => {
+            if let Some(path) = args.get(2) {
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
+                    let total = rl.history().len();
+                    for i in *append_offset..total {
+                        if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
+                            let _ = writeln!(file, "{}", result.entry);
+                        }
+                    }
+                    *append_offset = total;
+                }
+            } else {
+                eprintln!("history: -a: missing file operand");
             }
         }
         _ => {
