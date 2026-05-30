@@ -227,7 +227,7 @@ fn handle_history(
                 eprintln!("history: -w: missing file operand");
             }
         }
-        Some("a") => {
+        Some("-a") => {
             if let Some(path) = args.get(2) {
                 if let Ok(mut file) = std::fs::OpenOptions::new()
                     .create(true)
