@@ -623,7 +623,7 @@ fn handle_declare(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Writ
                     return;
                 }
                 if !validate_var_name(declartion[0]) {
-                    writeln!(stderr, "declare: '{}': not a valid identifier", op).unwrap();
+                    writeln!(stderr, "declare: `{}': not a valid identifier", op).unwrap();
                     return;
                 }
                 get_variables()
