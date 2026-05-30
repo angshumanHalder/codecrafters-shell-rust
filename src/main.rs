@@ -117,12 +117,11 @@ fn repl() -> Result<()> {
                 let _ = rl.add_history_entry(trimmed);
                 if trimmed.starts_with("history") {
                     handle_history(&mut rl, trimmed, &mut history_append_offset);
-                }
-                if trimmed == "exit" || trimmed.starts_with("exit ") {
+                } else if trimmed == "exit" || trimmed.starts_with("exit ") {
                     write_history_to_file(&mut rl, &history_path, history_append_offset);
-                    commands::process_command(&line.trim());
+                    commands::process_command(trimmed);
                 } else {
-                    commands::process_command(&line.trim());
+                    commands::process_command(trimmed);
                 }
             }
             Err(_) => {
