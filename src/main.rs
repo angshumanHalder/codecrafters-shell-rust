@@ -92,6 +92,7 @@ fn main() -> Result<()> {
 fn repl() -> Result<()> {
     let config = Config::builder()
         .completion_type(rustyline::CompletionType::List)
+        .history_ignore_dups(false)?
         .build();
     let mut rl = Editor::with_config(config)?;
     let shell_helper = ShellHelper {
