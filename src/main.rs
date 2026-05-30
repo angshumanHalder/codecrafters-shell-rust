@@ -208,9 +208,13 @@ fn handle_history(rl: &mut Editor<ShellHelper, rustyline::history::DefaultHistor
                 eprintln!("history: -r: missing file operand");
             }
         }
-        Some("-w") => {
+        Some("-w") | Some("-a") => {
             if let Some(path) = args.get(2) {
-                if let Ok(mut file) = std::fs::File::create(path) {
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
                     for i in 0..rl.history().len() {
                         if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
                             let _ = writeln!(file, "{}", result.entry);
