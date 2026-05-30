@@ -117,11 +117,16 @@ fn repl() -> Result<()> {
                 let _ = rl.add_history_entry(trimmed);
                 if trimmed.starts_with("history") {
                     handle_history(&mut rl, trimmed, &mut history_append_offset);
+                }
+                if trimmed == "exit" || trimmed.starts_with("exit ") {
+                    write_history_to_file(&mut rl, &history_path, history_append_offset);
+                    commands::process_command(&line.trim());
                 } else {
                     commands::process_command(&line.trim());
                 }
             }
             Err(_) => {
+                write_history_to_file(&mut rl, &history_path, history_append_offset);
                 break;
             }
         }
@@ -229,19 +234,8 @@ fn handle_history(
         }
         Some("-a") => {
             if let Some(path) = args.get(2) {
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                {
-                    let total = rl.history().len();
-                    for i in *append_offset..total {
-                        if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
-                            let _ = writeln!(file, "{}", result.entry);
-                        }
-                    }
-                    *append_offset = total;
-                }
+                write_history_to_file(rl, path.as_ref(), *append_offset);
+                *append_offset = rl.history().len();
             } else {
                 eprintln!("history: -a: missing file operand");
             }
@@ -257,6 +251,26 @@ fn handle_history(
                 if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
                     println!("{:5}  {}", i + 1, result.entry);
                 }
+            }
+        }
+    }
+}
+
+fn write_history_to_file(
+    rl: &mut Editor<ShellHelper, rustyline::history::DefaultHistory>,
+    path: &std::ffi::OsStr,
+    offset: usize,
+) {
+    use rustyline::history::SearchDirection;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let total = rl.history().len();
+        for i in offset..total {
+            if let Ok(Some(result)) = rl.history().get(i, SearchDirection::Forward) {
+                let _ = writeln!(file, "{}", result.entry);
             }
         }
     }
